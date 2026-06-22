@@ -3,10 +3,6 @@ output/
 *.zip
 server/node_modules/
 server/.wrangler/
-apk/.gradle/
-apk/app/build/
-apk/build/
 *.apk
 *.jks
 *.keystore
-local.properties

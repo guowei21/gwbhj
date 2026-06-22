@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>系统服务</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="app">
+  <div id="page-auth" class="page hidden">
+    <div class="card">
+      <h2>授权绑定</h2>
+      <div class="field">
+        <label>设备 Hash</label>
+        <div id="device-hash" class="mono">加载中...</div>
+      </div>
+      <div class="field">
+        <label>卡密</label>
+        <input id="code-input" type="text" placeholder="GWBHJ-XXXX-XXXX-XXXX">
+      </div>
+      <button id="btn-bind" onclick="doBind()">绑定</button>
+      <div id="auth-msg" class="msg hidden"></div>
+    </div>
+  </div>
+
+  <div id="page-status" class="page hidden">
+    <div class="card">
+      <h2>过强标黑机</h2>
+      <div class="info-row"><span>Root 方案</span><span id="root-sol">-</span></div>
+      <div class="info-row"><span>模块状态</span><span id="mod-status">-</span></div>
+      <div class="info-row"><span>序列号</span><span id="serial-val">-</span></div>
+      <div class="info-row"><span>白名单</span><span id="wl-count">-</span></div>
+      <div class="info-row"><span>授权状态</span><span id="auth-status">-</span></div>
+      <div class="info-row"><span>卡密</span><span id="license-code">-</span></div>
+      <div class="info-row"><span>最后验证</span><span id="last-verify">-</span></div>
+      <div class="info-row"><span>有效期至</span><span id="expiry">-</span></div>
+      <div class="info-row"><span>互抵次数</span><span id="clash-count">-</span></div>
+    </div>
+
+    <div class="card">
+      <h2>操作</h2>
+      <button onclick="navigateTo('whitelist')">白名单管理</button>
+      <button onclick="navigateTo('freezelist')">冻结列表管理</button>
+      <button onclick="doAction('reset-serial')">修改序列号</button>
+      <button onclick="doAction('jailbreak')">越狱隐藏环境</button>
+      <button onclick="doAction('freeze')">冻结多开软件</button>
+      <button onclick="navigateTo('clash')">查看互抵详情</button>
+      <button class="btn-danger" onclick="doUnbind()">解绑卡密</button>
+    </div>
+  </div>
+
+  <div id="page-whitelist" class="page hidden">
+    <div class="card">
+      <h2>白名单管理</h2>
+      <div class="add-row">
+        <input id="wl-input" type="text" placeholder="com.example.app">
+        <button onclick="addWhitelist()">添加</button>
+      </div>
+      <div id="wl-list" class="pkg-list"></div>
+      <button onclick="navigateTo('status')">返回</button>
+    </div>
+  </div>
+
+  <div id="page-freezelist" class="page hidden">
+    <div class="card">
+      <h2>冻结列表管理</h2>
+      <div class="add-row">
+        <input id="fl-input" type="text" placeholder="com.example.app">
+        <button onclick="addFreezelist()">添加</button>
+      </div>
+      <div id="fl-list" class="pkg-list"></div>
+      <button onclick="navigateTo('status')">返回</button>
+    </div>
+  </div>
+
+  <div id="page-clash" class="page hidden">
+    <div class="card">
+      <h2>互抵详情</h2>
+      <div id="clash-content">加载中...</div>
+      <button onclick="navigateTo('status')">返回</button>
+    </div>
+  </div>
+
+  <div id="loading" class="loading hidden">处理中...</div>
+</div>
+<script src="script.js"></script>
+</body>
+</html>

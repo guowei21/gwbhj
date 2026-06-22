@@ -84,6 +84,7 @@ done
 # ── assemble static module files ─────────────────────────────────────────────
 log "assembling module tree"
 cp -r module/. "$STAGE/"
+mkdir -p "$STAGE/webroot"
 
 cat > "$STAGE/module.prop" <<EOF
 id=gwbhj_jailbreak

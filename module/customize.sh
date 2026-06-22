@@ -97,6 +97,11 @@ done
 chmod 0755 "$MODPATH/service.sh" "$MODPATH/action.sh" "$MODPATH/uninstall.sh" 2>/dev/null
 chmod 0644 "$MODPATH/whitelist.txt" "$MODPATH/freeze_list.txt" 2>/dev/null
 
+if [ -d "$MODPATH/webroot" ]; then
+    chmod 0755 "$MODPATH/webroot" 2>/dev/null
+    chmod 0644 "$MODPATH/webroot/index.html" "$MODPATH/webroot/style.css" "$MODPATH/webroot/script.js" 2>/dev/null
+fi
+
 for file in "$MODPATH/whitelist.txt" "$MODPATH/freeze_list.txt" "$MODPATH/service.sh" "$MODPATH/action.sh"; do
     if [ -f "$file" ]; then
         chcon u:object_r:system_file:s0 "$file" 2>/dev/null

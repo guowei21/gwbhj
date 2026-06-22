@@ -1,5 +1,0 @@
--keepclassmembers class com.hw.security.service.data.** { *; }
--keepclassmembers class com.hw.security.service.network.** { *; }
--keep class org.bouncycastle.** { *; }
--dontwarn org.bouncycastle.**
--keepattributes *Annotation*

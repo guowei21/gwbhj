@@ -25,3 +25,8 @@ if [ -f "$MODDIR/clash_info.json" ]; then
     chmod 644 "$MODDIR/clash_info.json"
     chcon u:object_r:system_file:s0 "$MODDIR/clash_info.json" 2>/dev/null
 fi
+
+if [ -d "$MODDIR/webroot" ]; then
+    chmod 755 "$MODDIR/webroot"
+    chmod 644 "$MODDIR/webroot/index.html" "$MODDIR/webroot/style.css" "$MODDIR/webroot/script.js" 2>/dev/null
+fi
