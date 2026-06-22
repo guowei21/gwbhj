@@ -13,8 +13,8 @@ set -euo pipefail
 REPO="$(cd "$(dirname "$0")" && pwd)"
 cd "$REPO"
 
-VERSION="${1:-1.0.15}"
-VERSION_CODE="${2:-115}"
+VERSION="${1:-2.0.0}"
+VERSION_CODE="${2:-200}"
 OUT_DIR="$REPO/output"
 BUILD_DIR="$REPO/.build"
 STAGE="$BUILD_DIR/module"
@@ -91,7 +91,7 @@ name=过强标黑机
 version=$VERSION
 versionCode=$VERSION_CODE
 author=蜡笔不小心
-description=过腾讯黑名单，采用白名单控制默认添加三角洲，其它软件去"whitelist.txt"添加，自带越狱免解过环境，支持冻结精简多开系统软件。
+description=过腾讯黑名单，采用白名单控制默认添加三角洲，其它软件去"whitelist.txt"添加，自带越狱免解过环境，支持冻结精简多开系统软件。v2.0+ 授权验证系统，防共享防传播。
 minMagisk=20.4
 EOF
 

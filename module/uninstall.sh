@@ -5,6 +5,8 @@ MODDIR=/data/adb/modules/gwbhj_jailbreak
 
 rm -f "$MODDIR/serial.txt"
 rm -f "$MODDIR/whitelist.txt"
+rm -f "$MODDIR/license.json"
+rm -f "$MODDIR/clash_info.json"
 rm -f "$MODDIR/.c"
 
 if [ -f $INFO ]; then

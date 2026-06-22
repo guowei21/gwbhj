@@ -1,6 +1,6 @@
-# GWBHJ — 过强标黑机 KSU越狱版
+# GWBHJ — 过强标黑机 v2.0 授权版
 
-基于 Zygisk 的 Android 设备伪装模块，支持 Magisk / KernelSU / APatch。
+基于 Zygisk 的 Android 设备伪装模块，支持 Magisk / KernelSU / APatch。v2.0 新增授权验证系统。
 
 ## 功能
 
@@ -11,8 +11,9 @@
 | CPU 信息伪造 | 通过 companion 进程 bind mount 伪造 `/proc/cpuinfo`，伪装为 Kirin 9030 Pro 14 核 |
 | 序列号控制 | 随机生成序列号，写入 `serial.txt`，支持运行时热更新 |
 | 白名单机制 | 只对白名单中的包名生效，支持子进程名匹配（如 `com.xxx:remote`） |
-| KSU 越狱脚本 | 音量键交互菜单：修改序列号 / 越狱隐藏环境（手动执行 action.sh 触发） |
+| KSU 越狱脚本 | 音量键交互菜单 + 命令行参数模式 |
 | 安装后软重启 | 刷入模块后自动调用 KSU soft reboot，无需手动重启 |
+| **授权验证** | **v2.0 新增：Ed25519 签名验签、设备绑定、互抵锁死、grace period 兜底** |
 
 ## 当前伪装配置
 
@@ -37,19 +38,31 @@ gwbhj/
 ├── .gitignore
 ├── build.sh                      # 本地构建脚本（Termux / Linux）
 ├── module/                       # Magisk 模块静态文件
-│   ├── action.sh                 # 音量键交互菜单（修改序列号 / 越狱隐藏环境 / 退出）
+│   ├── action.sh                 # 音量键交互菜单 + 命令行参数模式
 │   ├── customize.sh              # 安装时自定义逻辑（root 检测、ABI 清理、权限设置）
-│   ├── service.sh                # 开机后服务（权限维护）
-│   ├── uninstall.sh              # 卸载清理
+│   ├── service.sh                # 开机后服务（权限维护 + license 权限）
+│   ├── uninstall.sh              # 卸载清理（含 license.json/clash_info.json）
 │   ├── whitelist.txt             # 白名单（每行一个包名，# 开头为注释）
 │   └── META-INF/com/google/android/
-│       ├── update-binary         # 安装入口（加载 Magisk/KSU/APatch 安装框架）
+│       ├── update-binary         # 安装入口
 │       └── updater-script        # #!/sbin/sh; exit 0
+├── server/                       # 服务端 EdgeOne Edge Functions
+│   ├── edge-functions/index.js   # API: bind/verify/clash-info/admin
+│   ├── package.json
+│   ├── wrangler.toml
+│   └── README.md                 # 部署指南
 └── src/                          # C++ 源码
     ├── CMakeLists.txt            # CMake 构建配置
-    ├── include/zygisk.hpp        # Zygisk API 头文件 (v4)
-    ├── spoof_module.cpp          # 核心模块：属性伪造、Build 字段修改、cpuinfo mount、白名单
-    └── atexit.cpp                # 自定义 __cxa_atexit/__cxa_finalize（防止 dlclose 异常）
+    ├── include/
+    │   ├── zygisk.hpp            # Zygisk API 头文件 (v4)
+    │   ├── sha256.h              # SHA-256 实现（纯 C++，无依赖）
+    │   ├── ed25519.h             # Ed25519 验签（纯 C++，无依赖）
+    │   └── mini_json.h           # 迷你 JSON 解析器（无依赖）
+    ├── spoof_module.cpp          # 核心模块：属性伪造、Build 修改、cpuinfo mount、白名单、授权验证
+    ├── sha256.cpp                # SHA-256 实现
+    ├── ed25519.cpp               # Ed25519 签名验证实现
+    ├── mini_json.cpp             # JSON 解析实现
+    └── atexit.cpp                # 自定义 __cxa_atexit/__cxa_finalize
 ```
 
 ## 工作原理
@@ -61,7 +74,8 @@ Zygisk 启动 App 进程
   └─ onLoad()              → 保存 api/env 引用
   └─ preAppSpecialize()    → 读取进程包名
       ├─ 不在白名单        → DLCLOSE_MODULE_LIBRARY，跳过
-      └─ 在白名单          → 执行伪装：
+      ├─ 在白名单但授权失败 → DLCLOSE_MODULE_LIBRARY，不执行伪装
+      └─ 在白名单且授权通过 → 执行伪装：
           ├─ spoofDevice()       修改 Build.MODEL/BRAND/DEVICE 等 Java 静态字段
           ├─ forgeProp() × 30+   COW 方式修改系统属性（per-process，不影响全局）
           └─ executeCompanion()  通过 socket 通知 companion 进程 mount cpuinfo
@@ -104,11 +118,62 @@ sh /data/adb/modules/gwbhj_jailbreak/action.sh
 |------|------|
 | 1. 修改序列号 | 随机生成新的 16 位序列号，写入 serial.txt |
 | 2. 越狱隐藏环境 | 放宽内核安全限制 + PID 回收 + soft reboot |
-| 3. 退出 | 退出菜单 |
+| 3. 冻结多开系统软件 | 冻结多开用户的系统软件 |
+| 4. 查看状态 | 查看模块和授权状态 |
+| 5. 退出 | 退出菜单 |
 
 操作方式：
-- **音量下**：切换到下一个选项（第 3 项按下循环回第 1 项）
+- **音量下**：切换到下一个选项
 - **音量上**：确认当前选项
+
+### 命令行模式
+
+```sh
+sh /data/adb/modules/gwbhj_jailbreak/action.sh reset-serial   # 修改序列号
+sh /data/adb/modules/gwbhj_jailbreak/action.sh jailbreak      # 越狱隐藏环境
+sh /data/adb/modules/gwbhj_jailbreak/action.sh freeze         # 冻结多开系统软件
+sh /data/adb/modules/gwbhj_jailbreak/action.sh status         # 查看状态
+```
+
+## 授权验证系统 (v2.0)
+
+### 工作流程
+
+1. 用户在管理端 APK 输入卡密 → APK 调用服务端 `/api/bind` → 服务端返回签名 `license.json` → APK 写入模块目录
+2. `.so` 在 `preAppSpecialize` 中调用 `authOk()` 验签 → 验证通过才执行伪装
+3. APK 定期调用 `/api/verify` 更新 `license.json`，`.so` 只需读本地文件
+
+### authOk() 验证链
+
+```
+读取 license.json → Ed25519 验签 → device_hash 匹配本机 → revoked==false
+→ lock_until 未过期 → active==true → grace period 有效 → 全部通过
+```
+
+认证失败时：不修改 Build/属性/cpuinfo，DLCLOSE 卸载模块，不影响 Zygisk。
+
+### 设备 ID
+
+从 `/proc/cmdline` 顺序读取：`androidboot.cpuid` → `chipid` → `emmcid` → `oplusboot.serialno` → `serialno`，取第一个非空值，生成 `SHA256(hardware_id + SALT)`。
+
+### 互抵机制
+
+- 同一卡密同一时间只允许一台设备
+- 被互抵后伪装功能关闭
+- 连续互抵次数递增锁定：1-3次锁1小时 → 4-5次锁4小时 → ... → 10次永久锁死
+
+### Grace Period
+
+网络断开时允许离线使用 24 小时（`grace_seconds` 可配置）。超期自动关闭伪装。
+
+### 安全设计
+
+| 层级 | 保护 |
+|------|------|
+| license.json 篡改 | Ed25519 验签失败 |
+| 伪造服务器响应 | 无私钥无法签名 |
+| 多人共用卡密 | 互抵 + 渐进锁死 |
+| 抓包重放 | nonce + 时间戳 |
 
 ### 白名单配置
 
@@ -175,7 +240,7 @@ $INCLUDE = "$SRC\include"
     -fvisibility=hidden -fvisibility-inlines-hidden -fno-rtti `
     -g0 -DNDEBUG -fPIC -shared `
     -o arm64-v8a.so `
-    -I"$INCLUDE" "$SRC\spoof_module.cpp" "$SRC\atexit.cpp" `
+    -I"$INCLUDE" "$SRC\spoof_module.cpp" "$SRC\atexit.cpp" "$SRC\sha256.cpp" "$SRC\ed25519.cpp" "$SRC\mini_json.cpp" `
     -Wl,--gc-sections -Wl,--exclude-libs,ALL `
     -static-libstdc++ -llog
 
@@ -271,6 +336,9 @@ static constexpr const char* DEVICE_PLATFORM = "kirin9030";
 | 白名单 | 文件 mtime 监测 + mutex 保护，支持热更新 |
 | 子进程匹配 | `包名:子进程名` 自动截取冒号前部分匹配白名单 |
 | 自定义 atexit | 替代 `__cxa_atexit/__cxa_finalize`，防止 dlclose 时析构崩溃 |
+| 授权验证 | 纯 C++ 实现 SHA256 + Ed25519 + JSON 解析，无外部依赖 |
+| 设备 ID | 从 `/proc/cmdline` 读取硬件 ID，生成 `SHA256(hwId + SALT)` |
+| 验签 | 内置服务端公钥，Ed25519 验证 license.json 签名 |
 
 ## 兼容性
 

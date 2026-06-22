@@ -1,10 +1,98 @@
 #!/system/bin/sh
-# GWBHJ — Interactive menu with volume keys
-# Usage: sh /data/adb/modules/gwbhj_jailbreak/action.sh
+# GWBHJ — Interactive menu with volume keys + command line mode
+# Usage:
+#   sh action.sh                  (interactive menu)
+#   sh action.sh reset-serial     (reset serial number)
+#   sh action.sh jailbreak        (apply jailbreak environment)
+#   sh action.sh freeze           (freeze multi-user system apps)
+#   sh action.sh status           (show module status)
+#   sh action.sh bind GWBHJ-XXXX (placeholder, handled by APK)
 
 MODULE_DIR="/data/adb/modules/gwbhj_jailbreak"
 SERIAL_FILE="$MODULE_DIR/serial.txt"
 FREEZE_LIST="$MODULE_DIR/freeze_list.txt"
+LICENSE_FILE="$MODULE_DIR/license.json"
+
+show_status() {
+    echo ""
+    echo "================================"
+    echo "    过强标黑机 状态"
+    echo "================================"
+    echo ""
+
+    if [ -f "$MODULE_DIR/module.prop" ]; then
+        local ver
+        ver=$(grep '^version=' "$MODULE_DIR/module.prop" 2>/dev/null | head -1 | sed 's/version=//')
+        echo "  模块版本: ${ver:-unknown}"
+    else
+        echo "  模块版本: unknown"
+    fi
+
+    local root_sol="unknown"
+    if command -v apd >/dev/null 2>&1; then
+        root_sol="APatch"
+    elif command -v ksud >/dev/null 2>&1; then
+        root_sol="KernelSU"
+    elif command -v magisk >/dev/null 2>&1; then
+        root_sol="Magisk"
+    fi
+    echo "  Root方案: $root_sol"
+
+    if [ -f "$SERIAL_FILE" ]; then
+        echo "  序列号: $(cat "$SERIAL_FILE" 2>/dev/null)"
+    else
+        echo "  序列号: 未设置"
+    fi
+
+    local wl_count=0
+    if [ -f "$MODULE_DIR/whitelist.txt" ]; then
+        wl_count=$(grep -cv '^#\|^$' "$MODULE_DIR/whitelist.txt" 2>/dev/null || echo 0)
+    fi
+    echo "  白名单: ${wl_count} 个包名"
+
+    if [ -f "$LICENSE_FILE" ]; then
+        local active
+        active=$(grep -o '"active"[[:space:]]*:[[:space:]]*true' "$LICENSE_FILE" 2>/dev/null)
+        if [ -n "$active" ]; then
+            echo "  授权: 已激活"
+        else
+            echo "  授权: 未激活/已过期"
+        fi
+    else
+        echo "  授权: 未绑定"
+    fi
+
+    echo ""
+    echo "================================"
+    echo ""
+}
+
+# ── command line mode ──────────────────────────
+if [ $# -gt 0 ]; then
+    case "$1" in
+        reset-serial) reset_serial ;;
+        jailbreak)    jailbreak ;;
+        freeze)       freeze_apps ;;
+        status)       show_status ;;
+        bind)
+            if [ -z "$2" ]; then
+                echo "用法: sh action.sh bind GWBHJ-XXXX-XXXX-XXXX"
+                exit 1
+            fi
+            echo "  卡密绑定请使用管理端APK操作"
+            echo "  卡密: $2"
+            exit 0
+            ;;
+        *)
+            echo "未知命令: $1"
+            echo "可用命令: reset-serial, jailbreak, freeze, status, bind"
+            exit 1
+            ;;
+    esac
+    exit 0
+fi
+
+# ── interactive menu mode ──────────────────────
 
 wait_key() {
     while true; do
@@ -282,7 +370,7 @@ freeze_apps() {
 }
 
 MAIN_CURRENT=0
-MAIN_COUNT=4
+MAIN_COUNT=5
 
 show_main_menu() {
     clear 2>/dev/null
@@ -293,7 +381,8 @@ show_main_menu() {
     if [ "$MAIN_CURRENT" -eq 0 ]; then echo "  > 1. 修改序列号"; else echo "    1. 修改序列号"; fi
     if [ "$MAIN_CURRENT" -eq 1 ]; then echo "  > 2. 越狱隐藏环境"; else echo "    2. 越狱隐藏环境"; fi
     if [ "$MAIN_CURRENT" -eq 2 ]; then echo "  > 3. 冻结多开系统软件"; else echo "    3. 冻结多开系统软件"; fi
-    if [ "$MAIN_CURRENT" -eq 3 ]; then echo "  > 4. 退出"; else echo "    4. 退出"; fi
+    if [ "$MAIN_CURRENT" -eq 3 ]; then echo "  > 4. 查看状态"; else echo "    4. 查看状态"; fi
+    if [ "$MAIN_CURRENT" -eq 4 ]; then echo "  > 5. 退出"; else echo "    5. 退出"; fi
     echo ""
     echo "  音量下：切换"
     echo "  音量上：确认"
@@ -310,7 +399,8 @@ while true; do
             0) reset_serial ;;
             1) jailbreak ;;
             2) freeze_apps ;;
-            3) echo ""; echo "  退出"; exit 0 ;;
+            3) show_status ;;
+            4) echo ""; echo "  退出"; exit 0 ;;
         esac
     fi
 done

@@ -2,6 +2,7 @@
  *  过强标黑机 (GWBHJ) — Hardcoded device & CPU spoof module for Android
  *  Based on COPG v5.1.1 by Alireza Parsi
  *  Simplified: hardcoded config, whitelist-based, separate SERIAL control
+ *  + Authorization: Ed25519 license verification, device_hash binding
  * ========================================================================== */
 #include <jni.h>
 #include <string>
@@ -24,6 +25,10 @@
 #include <cstdlib>
 #include <cerrno>
 #include <sys/system_properties.h>
+#include <ctime>
+#include "sha256.h"
+#include "ed25519.h"
+#include "mini_json.h"
 
 #ifdef DEBUG
 #define LOG_TAG "GWBHJModule"
@@ -228,6 +233,13 @@ static const char CPUINFO_SPOOF[] =
     "\n"
     "Hardware\t: HUAWEI Kirin 9030 Pro\n";
 
+static const char* LICENSE_PATH = "/data/adb/modules/gwbhj_jailbreak/license.json";
+
+static const char* COMPILE_TIME_SALT = "GWBHJ_2026_SALT_v2";
+
+static const char* SERVER_PUBLIC_KEY_B64 =
+    "REPLACE_WITH_SERVER_PUBLIC_KEY_BASE64";
+
 // ─────────────────────────────────────────
 // Hardcoded whitelist (fallback if file missing)
 // ─────────────────────────────────────────
@@ -319,6 +331,198 @@ static void reloadSerialIfNeeded() {
     g_serial = std::move(val);
     g_serial_mtime = st.st_mtime;
     LOGI("Serial reloaded: %s", g_serial.c_str());
+}
+
+// ─────────────────────────────────────────
+// Device ID & Authorization
+// ─────────────────────────────────────────
+static std::string g_cached_device_hash;
+static std::mutex g_auth_mutex;
+
+static std::string readProcCmdline() {
+    std::ifstream f("/proc/cmdline");
+    if (!f.is_open()) return "";
+    std::string content((std::istreambuf_iterator<char>(f)),
+                         std::istreambuf_iterator<char>());
+    return content;
+}
+
+static std::string extractCmdlineField(const std::string& cmdline, const std::string& key) {
+    size_t pos = cmdline.find(key + "=");
+    if (pos == std::string::npos) return "";
+
+    size_t valStart = pos + key.size() + 1;
+    size_t valEnd = cmdline.find_first_of(" \t\n\r", valStart);
+    if (valEnd == std::string::npos) valEnd = cmdline.size();
+
+    std::string value = cmdline.substr(valStart, valEnd - valStart);
+    return trim(value);
+}
+
+static std::string readHardwareId() {
+    std::string cmdline = readProcCmdline();
+    if (cmdline.empty()) {
+        LOGW("[AUTH] Failed to read /proc/cmdline");
+        return "";
+    }
+
+    static const char* fields[] = {
+        "androidboot.cpuid",
+        "androidboot.chipid",
+        "androidboot.emmcid",
+        "oplusboot.serialno",
+        "androidboot.serialno"
+    };
+
+    for (const char* field : fields) {
+        std::string value = extractCmdlineField(cmdline, field);
+        if (!value.empty()) {
+            LOGI("[AUTH] Hardware ID from %s", field);
+            return value;
+        }
+    }
+
+    LOGW("[AUTH] No hardware ID found in cmdline");
+    return "";
+}
+
+static std::string generateDeviceHash() {
+    std::lock_guard<std::mutex> lock(g_auth_mutex);
+    if (!g_cached_device_hash.empty()) return g_cached_device_hash;
+
+    std::string hwId = readHardwareId();
+    if (hwId.empty()) {
+        LOGE("[AUTH] Cannot generate device_hash: no hardware ID");
+        return "";
+    }
+
+    std::string input = hwId + COMPILE_TIME_SALT;
+    g_cached_device_hash = SHA256::hash(input);
+    LOGI("[AUTH] device_hash generated: %s...", g_cached_device_hash.substr(0, 16).c_str());
+    return g_cached_device_hash;
+}
+
+static std::string readFileContent(const std::string& path) {
+    std::ifstream f(path);
+    if (!f.is_open()) return "";
+    std::string content((std::istreambuf_iterator<char>(f)),
+                         std::istreambuf_iterator<char>());
+    return content;
+}
+
+static bool verifyLicenseSignature(const std::string& jsonContent, const std::string& signature) {
+    if (signature.empty() || SERVER_PUBLIC_KEY_B64[0] == 'R') {
+        LOGW("[AUTH] Server public key not configured, signature verification skipped");
+        return false;
+    }
+    bool result = Ed25519::verify(jsonContent, signature, SERVER_PUBLIC_KEY_B64);
+    if (!result) {
+        LOGE("[AUTH] Ed25519 signature verification FAILED");
+    }
+    return result;
+}
+
+static bool authOk() {
+    std::string licenseContent = readFileContent(LICENSE_PATH);
+    if (licenseContent.empty()) {
+        LOGW("[AUTH] license.json not found or empty");
+        return false;
+    }
+
+    MiniJson license = MiniJson::parse(licenseContent);
+    if (!license.isObject()) {
+        LOGE("[AUTH] license.json parse failed");
+        return false;
+    }
+
+    std::string signature;
+    if (license.has("signature") && license["signature"].isString()) {
+        signature = license["signature"].asString();
+    }
+
+    std::string jsonForVerify = licenseContent;
+    size_t sigPos = jsonForVerify.rfind("\"signature\"");
+    if (sigPos != std::string::npos) {
+        size_t objStart = jsonForVerify.rfind(',', sigPos);
+        if (objStart != std::string::npos) {
+            jsonForVerify = jsonForVerify.substr(0, objStart) + jsonForVerify.substr(sigPos);
+        }
+    }
+
+    {
+        size_t sigKeyPos = licenseContent.rfind("\"signature\"");
+        if (sigKeyPos != std::string::npos) {
+            size_t commaPos = licenseContent.rfind(',', sigKeyPos);
+            if (commaPos != std::string::npos) {
+                jsonForVerify = licenseContent.substr(0, commaPos);
+                jsonForVerify += "\n}";
+            }
+        }
+    }
+
+    if (!verifyLicenseSignature(jsonForVerify, signature)) {
+        LOGE("[AUTH] License signature verification failed");
+        return false;
+    }
+
+    if (license.has("device_hash") && license["device_hash"].isString()) {
+        std::string licenseDeviceHash = license["device_hash"].asString();
+        std::string localDeviceHash = generateDeviceHash();
+        if (localDeviceHash.empty() || licenseDeviceHash != localDeviceHash) {
+            LOGE("[AUTH] device_hash mismatch: license=%s... local=%s...",
+                 licenseDeviceHash.substr(0, 16).c_str(),
+                 localDeviceHash.empty() ? "EMPTY" : localDeviceHash.substr(0, 16).c_str());
+            return false;
+        }
+    } else {
+        LOGE("[AUTH] license.json missing device_hash");
+        return false;
+    }
+
+    if (license.has("revoked") && license["revoked"].isBool()) {
+        if (license["revoked"].asBool()) {
+            LOGE("[AUTH] License revoked");
+            return false;
+        }
+    }
+
+    if (license.has("lock_until") && license["lock_until"].isNumber()) {
+        long lockUntil = license["lock_until"].asLong();
+        if (lockUntil > 0) {
+            time_t now = time(nullptr);
+            if (now < lockUntil) {
+                LOGE("[AUTH] License locked until %ld (now=%ld)", lockUntil, (long)now);
+                return false;
+            }
+        }
+    }
+
+    if (license.has("active") && license["active"].isBool()) {
+        if (!license["active"].asBool()) {
+            LOGE("[AUTH] License not active");
+            return false;
+        }
+    }
+
+    if (license.has("last_server_ok") && license["last_server_ok"].isNumber()) {
+        long lastServerOk = license["last_server_ok"].asLong();
+        int graceSeconds = 86400;
+        if (license.has("grace_seconds") && license["grace_seconds"].isNumber()) {
+            graceSeconds = (int)license["grace_seconds"].asLong();
+        }
+        time_t now = time(nullptr);
+        if (lastServerOk + graceSeconds < (long)now) {
+            LOGE("[AUTH] Grace period expired: last_server_ok=%ld + grace=%d < now=%ld",
+                 lastServerOk, graceSeconds, (long)now);
+            return false;
+        }
+    } else {
+        LOGE("[AUTH] license.json missing last_server_ok");
+        return false;
+    }
+
+    LOGI("[AUTH] Authorization OK");
+    return true;
 }
 
 // ─────────────────────────────────────────
@@ -487,7 +691,13 @@ public:
             return;
         }
 
-        LOGI("%s: in whitelist, applying spoof", pkg.c_str());
+        if (!authOk()) {
+            LOGW("%s: authorization failed, spoof disabled", pkg.c_str());
+            api->setOption(zygisk::Option::DLCLOSE_MODULE_LIBRARY);
+            return;
+        }
+
+        LOGI("%s: in whitelist + authorized, applying spoof", pkg.c_str());
 
         ensureBuildClass();
         spoofDevice(current_serial);

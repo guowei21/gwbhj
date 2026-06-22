@@ -103,6 +103,16 @@ for file in "$MODPATH/whitelist.txt" "$MODPATH/freeze_list.txt" "$MODPATH/servic
     fi
 done
 
+if [ -f "$MODPATH/license.json" ]; then
+    chmod 644 "$MODPATH/license.json" 2>/dev/null
+    chcon u:object_r:system_file:s0 "$MODPATH/license.json" 2>/dev/null
+fi
+
+if [ -f "$MODPATH/clash_info.json" ]; then
+    chmod 644 "$MODPATH/clash_info.json" 2>/dev/null
+    chcon u:object_r:system_file:s0 "$MODPATH/clash_info.json" 2>/dev/null
+fi
+
 if [ ! -f "$MODPATH/serial.txt" ]; then
     cat /dev/urandom | tr -dc 'A-Za-z0-9' | head -c 16 > "$MODPATH/serial.txt" 2>/dev/null
     chmod 644 "$MODPATH/serial.txt" 2>/dev/null

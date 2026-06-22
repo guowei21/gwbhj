@@ -14,7 +14,10 @@ endif()
 
 add_library(spoof SHARED
             spoof_module.cpp
-            atexit.cpp)
+            atexit.cpp
+            sha256.cpp
+            ed25519.cpp
+            mini_json.cpp)
 
 find_library(log-lib log)
 
