@@ -19,11 +19,6 @@ static void feNeg(fe h, const fe f) { for (int i = 0; i < 5; i++) h[i] = -f[i]; 
 static void feAdd(fe h, const fe f, const fe g) { for (int i = 0; i < 5; i++) h[i] = f[i] + g[i]; }
 static void feSub(fe h, const fe f, const fe g) { for (int i = 0; i < 5; i++) h[i] = f[i] - g[i]; }
 
-static int feIsNegative(const fe f) {
-    fe h; feCopy(h,f); feReduce(h);
-    return (int)(h[0] & 1);
-}
-
 static void feReduce(fe h) {
     for (int i = 0; i < 5; i++) {
         h[i] += (1LL << 47); h[i] &= 0x1FFFFFFFFFFFFLL;
@@ -36,6 +31,11 @@ static void feReduce(fe h) {
     c = (h[3] + (1LL << 47)) >> 51; h[3] &= 0x1FFFFFFFFFFFFLL; h[4] += c;
     c = (h[4] + (1LL << 47)) >> 51; h[4] &= 0x1FFFFFFFFFFFFLL; h[0] += c * 19;
     c = (h[0] + (1LL << 47)) >> 51; h[0] &= 0x1FFFFFFFFFFFFLL; h[1] += c;
+}
+
+static int feIsNegative(const fe f) {
+    fe h; feCopy(h,f); feReduce(h);
+    return (int)(h[0] & 1);
 }
 
 static void feMul(fe h, const fe f, const fe g) {
