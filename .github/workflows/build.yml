@@ -81,15 +81,7 @@ jobs:
             cp ".build/abis/$abi/$abi.so" "$STAGE/zygisk/"
           done
 
-          cat > "$STAGE/module.prop" << 'PROPEOF'
-id=gwbhj_jailbreak
-name=过强标黑机
-version=2.0.0
-versionCode=200
-author=蜡笔不小心
-description=过腾讯黑名单，白名单控制+授权验证+互抵锁死+越狱环境+冻结多开。v2.0 授权系统。
-minMagisk=20.4
-PROPEOF
+          printf 'id=gwbhj_jailbreak\nname=过强标黑机\nversion=2.0.0\nversionCode=200\nauthor=蜡笔不小心\ndescription=过腾讯黑名单，白名单控制+授权验证+互抵锁死+越狱环境+冻结多开。v2.0 授权系统。\nminMagisk=20.4\n' > "$STAGE/module.prop"
 
           chmod 0755 "$STAGE/customize.sh" "$STAGE/service.sh" "$STAGE/uninstall.sh" \
                      "$STAGE/action.sh" \
