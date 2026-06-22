@@ -45,14 +45,14 @@ static const char* CPUINFO_SPOOF_PATH = "/data/adb/modules/gwbhj_jailbreak/.c";
 // Hardcoded device profile (compile-time constants)
 // ─────────────────────────────────────────
 static constexpr const char* DEVICE_BRAND = "HUAWEI";
-static constexpr const char* DEVICE_DEVICE = "SGT";
+static constexpr const char* DEVICE_DEVICE = "HWSGT";
 static constexpr const char* DEVICE_MANUFACTURER = "HUAWEI";
 static constexpr const char* DEVICE_MODEL = "SGT-AL10";
 static constexpr const char* DEVICE_MARKET_NAME = "HUAWEI Mate 80 Pro Max";
 static constexpr const char* DEVICE_FINGERPRINT = "HUAWEI/SGT-AL10/HWSGT:12/HUAWEISGT-AL10/6.0.0.150C00:user/release-keys";
 static constexpr const char* DEVICE_PRODUCT = "SGT-AL10";
-static constexpr const char* DEVICE_HARDWARE = "kirin9030pro";
-static constexpr const char* DEVICE_PLATFORM = "kirin9030";
+static constexpr const char* DEVICE_HARDWARE = "kirin9030";
+static constexpr const char* DEVICE_PLATFORM = "SGT";
 
 struct PropOverride {
     const char* name;
