@@ -1,13 +1,17 @@
 {
   "name": "gwbhj-server",
   "version": "1.0.0",
-  "description": "GWBHJ License Server - EdgeOne Edge Functions",
+  "description": "GWBHJ License Server - Cloudflare Workers",
   "private": true,
   "scripts": {
-    "dev": "edge-functions dev",
-    "deploy": "edge-functions deploy"
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "generate-keys": "node generate_keys.js"
   },
   "dependencies": {
     "@noble/ed25519": "^2.0.0"
+  },
+  "devDependencies": {
+    "wrangler": "^3.0.0"
   }
 }

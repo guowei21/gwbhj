@@ -4,8 +4,8 @@ compatibility_date = "2024-01-01"
 
 [[kv_namespaces]]
 binding = "GWBHJ_KV"
-id = "REPLACE_WITH_YOUR_KV_NAMESPACE_ID"
+id = "STEP4_FILL_KV_ID"
 
-[vars]
-ED25519_PRIVATE_KEY = "REPLACE_WITH_PRIVATE_KEY_HEX"
-ADMIN_KEY = "REPLACE_WITH_ADMIN_KEY"
+# 敏感信息请用 wrangler secret 设置，不要写在这里
+# wrangler secret put ED25519_PRIVATE_KEY
+# wrangler secret put ADMIN_KEY
