@@ -1,0 +1,45 @@
+#!/sbin/sh
+
+#####################
+# Initialization
+#####################
+
+umask 022
+
+TMPDIR=/dev/tmp
+PERSISTDIR=/sbin/.magisk/mirror/persist
+
+rm -rf $TMPDIR 2>/dev/null
+mkdir -p $TMPDIR 2>/dev/null
+
+# echo before loading util_functions
+ui_print() { echo "$@"; }
+
+##############
+# Environment
+##############
+
+OUTFD=/proc/self/fd/$2
+ZIPFILE="$3"
+
+##############
+# Installation
+##############
+
+mount /data 2>/dev/null
+
+# Source Magisk/KSU/APatch utility functions
+for UTIL in \
+    /data/adb/magisk/util_functions.sh \
+    /data/adb/ksu/bin/util_functions.sh \
+    /data/adb/ap/bin/util_functions.sh; do
+    [ -f "$UTIL" ] && . "$UTIL" && break
+done
+
+if type install_module >/dev/null 2>&1; then
+    install_module
+else
+    ui_print "! No root solution detected!"
+    ui_print "! Please install via Magisk/KSU/APatch"
+    exit 1
+fi
