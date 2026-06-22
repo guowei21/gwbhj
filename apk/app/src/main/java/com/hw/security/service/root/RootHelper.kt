@@ -1,12 +1,13 @@
 package com.hw.security.service.root
 
 import com.topjohnwu.superuser.Shell
+import com.topjohnwu.superuser.io.SuFile
 import com.hw.security.service.util.Logger
 
 object RootHelper {
 
     fun hasRoot(): Boolean {
-        return Shell.getShell().isRoot
+        return Shell.isAppGrantedRoot() == true
     }
 
     fun detectRootSolution(): String {
@@ -17,7 +18,7 @@ object RootHelper {
     }
 
     fun isModuleInstalled(): Boolean {
-        return Shell.cmd("test -d /data/adb/modules/gwbhj_jailbreak").exec().isSuccess
+        return SuFile("/data/adb/modules/gwbhj_jailbreak").exists()
     }
 
     fun readProcCmdline(): String {

@@ -25,11 +25,12 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        Shell.getShell()
         enableEdgeToEdge()
 
-        if (ModuleFileIO.hasLicense()) {
-            WorkerScheduler.schedulePeriodicVerify(this)
+        Shell.getShell { shell ->
+            if (ModuleFileIO.hasLicense()) {
+                WorkerScheduler.schedulePeriodicVerify(this)
+            }
         }
 
         setContent {

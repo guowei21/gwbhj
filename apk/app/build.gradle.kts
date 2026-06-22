@@ -73,6 +73,7 @@ dependencies {
 
     implementation("com.github.topjohnwu.libsu:core:5.2.2")
     implementation("com.github.topjohnwu.libsu:service:5.2.2")
+    implementation("com.github.topjohnwu.libsu:nio:5.2.2")
 
     implementation("androidx.work:work-runtime-ktx:2.9.0")
 }

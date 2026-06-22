@@ -26,7 +26,7 @@ object ModuleFileIO {
 
     fun writeLicense(license: License): Boolean {
         val json = gson.toJson(license)
-        return ShellExecutor.writeFileDirect(Constants.LICENSE_FILE, json)
+        return ShellExecutor.writeFile(Constants.LICENSE_FILE, json)
     }
 
     fun deleteLicense(): Boolean {
@@ -43,7 +43,7 @@ object ModuleFileIO {
 
     fun writeWhitelist(packages: List<String>): Boolean {
         val content = packages.joinToString("\n")
-        return ShellExecutor.writeFileDirect(Constants.WHITELIST_FILE, content)
+        return ShellExecutor.writeFile(Constants.WHITELIST_FILE, content)
     }
 
     fun readFreezeList(): List<String> {
@@ -56,7 +56,7 @@ object ModuleFileIO {
 
     fun writeFreezeList(packages: List<String>): Boolean {
         val content = packages.joinToString("\n")
-        return ShellExecutor.writeFileDirect(Constants.FREEZE_LIST_FILE, content)
+        return ShellExecutor.writeFile(Constants.FREEZE_LIST_FILE, content)
     }
 
     fun readSerial(): String {
@@ -64,7 +64,7 @@ object ModuleFileIO {
     }
 
     fun writeSerial(serial: String): Boolean {
-        return ShellExecutor.writeFileDirect(Constants.SERIAL_FILE, serial)
+        return ShellExecutor.writeFile(Constants.SERIAL_FILE, serial)
     }
 
     fun hasLicense(): Boolean {
