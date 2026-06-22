@@ -2,9 +2,9 @@
 #include "sha256.h"
 #include <cstring>
 
-namespace {
-
 static const char B64_TABLE[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+
+namespace {
 
 typedef int64_t fe[5];
 
@@ -12,10 +12,17 @@ static const int64_t D[5] = {-10913610, 13857413, -15372611, 6949391, 114729};
 static const int64_t D2[5] = {-21827219, -5839606, -30745221, 13898782, 229458};
 static const int64_t SQRTM1[5] = {-32595792, -7943725, 9377950, 3500415, 123894719};
 
+static void fe0(fe h) { h[0]=0; h[1]=0; h[2]=0; h[3]=0; h[4]=0; }
+static void fe1(fe h) { h[0]=1; h[1]=0; h[2]=0; h[3]=0; h[4]=0; }
 static void feCopy(fe h, const fe f) { for (int i = 0; i < 5; i++) h[i] = f[i]; }
 static void feNeg(fe h, const fe f) { for (int i = 0; i < 5; i++) h[i] = -f[i]; }
 static void feAdd(fe h, const fe f, const fe g) { for (int i = 0; i < 5; i++) h[i] = f[i] + g[i]; }
 static void feSub(fe h, const fe f, const fe g) { for (int i = 0; i < 5; i++) h[i] = f[i] - g[i]; }
+
+static int feIsNegative(const fe f) {
+    fe h; feCopy(h,f); feReduce(h);
+    return (int)(h[0] & 1);
+}
 
 static void feReduce(fe h) {
     for (int i = 0; i < 5; i++) {
@@ -81,11 +88,6 @@ static void fePow22523(fe h, const fe f) {
     feSq(t0,t0); for(int i=1;i<5;i++) feSq(t0,t0); feMul(h,t0,f);
 }
 
-static int feIsNegative(const fe f) {
-    fe h; feCopy(h,f); feReduce(h);
-    return (int)(h[0] & 1);
-}
-
 static void feFromBytes(fe h, const uint8_t s[32]) {
     uint64_t v = (uint64_t)s[31] & 0x7F;
     for(int i=30;i>=0;i--) v = (v<<8) | (uint64_t)s[i];
@@ -147,15 +149,15 @@ static void geDouble(geP3* r, const geP3* p) {
 }
 
 static void geAdd(geP3* r, const geP3* p, const geP3* q) {
-    fe a,b,c,d,e,f,g,h;
+    fe a,b,c,d,e,f,g,hh;
     feSub(a,p->Y,p->X); feSub(b,q->Y,q->X); feMul(a,a,b);
-    feAdd(b,p->Y,p->X); feAdd(h,q->Y,q->X); feMul(b,b,h);
+    feAdd(b,p->Y,p->X); feAdd(hh,q->Y,q->X); feMul(b,b,hh);
     feMul(c,p->T,q->T); feMul(c,c,D2);
     feMul(d,p->Z,q->Z); feAdd(d,d,d);
     feSub(e,b,a); feSub(f,d,c);
-    feAdd(g,d,c); feAdd(h,b,a);
-    feMul(r->X,e,f); feSub(c,g,h);
-    feMul(r->Y,h,g); feMul(r->Z,f,g);
+    feAdd(g,d,c); feAdd(hh,b,a);
+    feMul(r->X,e,f); feSub(c,g,hh);
+    feMul(r->Y,hh,g); feMul(r->Z,f,g);
     feMul(r->T,e,c);
 }
 
@@ -179,7 +181,7 @@ static void geScalarMultBase(geP3* r, const uint8_t scalar[32]) {
             feSq(nx,y1); feMul(nz,z1,y1);
             feSq(ny,x1); feSub(nt,nx,ny);
             feAdd(nx,nx,ny); feMul(ny,nt,nz);
-            feSq(nz,z1); feMul(nz,nz,D2);
+            feSq(nz,nz); feMul(nz,nz,D2);
             feSub(nz,nx,nz); feAdd(nx,nx,nz);
             feCopy(x1,nx); feCopy(y1,ny); feCopy(z1,nz); feCopy(t1,nt);
         }
@@ -253,9 +255,6 @@ static bool geFromBytesNegateVartime(geP3* r, const uint8_t s[32]) {
     feMul(r->T, r->X, r->Y);
     return true;
 }
-
-static void fe1(fe h) { h[0]=1; h[1]=0; h[2]=0; h[3]=0; h[4]=0; }
-static void fe0(fe h) { h[0]=0; h[1]=0; h[2]=0; h[3]=0; h[4]=0; }
 
 }
 

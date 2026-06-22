@@ -81,15 +81,15 @@ jobs:
             cp ".build/abis/$abi/$abi.so" "$STAGE/zygisk/"
           done
 
-          cat > "$STAGE/module.prop" <<EOF
-          id=gwbhj_jailbreak
-          name=过强标黑机
-          version=$VERSION
-          versionCode=$VERSION_CODE
-          author=蜡笔不小心
-          description=过腾讯黑名单，白名单控制+授权验证+互抵锁死+越狱环境+冻结多开。v2.0 授权系统。
-          minMagisk=20.4
-          EOF
+          cat > "$STAGE/module.prop" << 'PROPEOF'
+id=gwbhj_jailbreak
+name=过强标黑机
+version=2.0.0
+versionCode=200
+author=蜡笔不小心
+description=过腾讯黑名单，白名单控制+授权验证+互抵锁死+越狱环境+冻结多开。v2.0 授权系统。
+minMagisk=20.4
+PROPEOF
 
           chmod 0755 "$STAGE/customize.sh" "$STAGE/service.sh" "$STAGE/uninstall.sh" \
                      "$STAGE/action.sh" \
@@ -119,11 +119,13 @@ jobs:
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v3
 
+      - name: Generate Gradle Wrapper
+        working-directory: apk
+        run: gradle wrapper --gradle-version 8.5
+
       - name: Build APK
         working-directory: apk
-        run: |
-          chmod +x gradlew || true
-          gradle assembleRelease --no-daemon
+        run: ./gradlew assembleRelease --no-daemon
 
       - name: Upload APK
         uses: actions/upload-artifact@v4

@@ -441,22 +441,12 @@ static bool authOk() {
     }
 
     std::string jsonForVerify = licenseContent;
-    size_t sigPos = jsonForVerify.rfind("\"signature\"");
-    if (sigPos != std::string::npos) {
-        size_t objStart = jsonForVerify.rfind(',', sigPos);
-        if (objStart != std::string::npos) {
-            jsonForVerify = jsonForVerify.substr(0, objStart) + jsonForVerify.substr(sigPos);
-        }
-    }
-
-    {
-        size_t sigKeyPos = licenseContent.rfind("\"signature\"");
-        if (sigKeyPos != std::string::npos) {
-            size_t commaPos = licenseContent.rfind(',', sigKeyPos);
-            if (commaPos != std::string::npos) {
-                jsonForVerify = licenseContent.substr(0, commaPos);
-                jsonForVerify += "\n}";
-            }
+    size_t sigKeyPos = licenseContent.rfind("\"signature\"");
+    if (sigKeyPos != std::string::npos) {
+        size_t commaPos = licenseContent.rfind(',', sigKeyPos);
+        if (commaPos != std::string::npos) {
+            jsonForVerify = licenseContent.substr(0, commaPos);
+            jsonForVerify += "\n}";
         }
     }
 
