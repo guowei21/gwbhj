@@ -16,7 +16,7 @@ async function main() {
     console.log('Public Key (Base64):', publicKeyBase64);
     console.log('');
     console.log('=== 需要填入的位置 ===');
-    console.log('私钥 HEX -> 服务端 wrangler.toml 的 ED25519_PRIVATE_KEY');
+    console.log('私钥 HEX -> EdgeOne 项目环境变量 ED25519_PRIVATE_KEY');
     console.log('公钥 Base64 -> src/spoof_module.cpp 的 SERVER_PUBLIC_KEY_B64');
     console.log('公钥 Base64 -> module/webroot/script.js 的 SERVER_PUBLIC_KEY (验签用)');
 }

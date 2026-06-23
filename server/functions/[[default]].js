@@ -1,16 +1,26 @@
-import { sign, getPublicKey } from '@noble/ed25519';
+import { sign } from '@noble/ed25519';
 
-const PRIVATE_KEY_HEX = process.env.ED25519_PRIVATE_KEY || 'REPLACE_WITH_PRIVATE_KEY_HEX';
-const ADMIN_KEY = process.env.ADMIN_KEY || 'REPLACE_WITH_ADMIN_KEY';
 const SALT = 'GWBHJ_2026_SALT_v2';
-
 const NONCE_CACHE = new Map();
 const RATE_LIMIT = new Map();
+
+function getEnvValue(env, name) {
+    return env?.[name] || globalThis[name] || '';
+}
+
+function getKV(env) {
+    return env?.GWBHJ_KV || globalThis.GWBHJ_KV || globalThis.gwbhj_kv || null;
+}
 
 function jsonResp(data, status = 200) {
     return new Response(JSON.stringify(data), {
         status,
-        headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
+        headers: {
+            'Content-Type': 'application/json; charset=utf-8',
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+            'Access-Control-Allow-Headers': 'Content-Type'
+        }
     });
 }
 
@@ -18,24 +28,14 @@ function errorResp(message, status = 400) {
     return jsonResp({ error: message }, status);
 }
 
-async function sha256(message) {
-    const encoder = new TextEncoder();
-    const data = encoder.encode(message);
-    const hashBuffer = await crypto.subtle.digest('SHA-256', data);
-    const hashArray = Array.from(new Uint8Array(hashBuffer));
-    return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-}
-
-async function generateDeviceHash(hardwareId) {
-    return sha256(hardwareId + SALT);
-}
-
 function verifyTimestamp(ts) {
+    if (!ts) return true;
     const now = Math.floor(Date.now() / 1000);
-    return Math.abs(now - ts) < 300;
+    return Math.abs(now - Number(ts)) < 300;
 }
 
 function checkNonce(nonce) {
+    if (!nonce) return true;
     if (NONCE_CACHE.has(nonce)) return false;
     NONCE_CACHE.set(nonce, Date.now());
     setTimeout(() => NONCE_CACHE.delete(nonce), 300000);
@@ -44,14 +44,10 @@ function checkNonce(nonce) {
 
 function checkRateLimit(deviceHash) {
     const now = Date.now();
-    const key = deviceHash;
-    if (!RATE_LIMIT.has(key)) {
-        RATE_LIMIT.set(key, []);
-    }
-    const timestamps = RATE_LIMIT.get(key).filter(t => now - t < 60000);
+    const timestamps = (RATE_LIMIT.get(deviceHash) || []).filter(t => now - t < 60000);
     if (timestamps.length >= 5) return false;
     timestamps.push(now);
-    RATE_LIMIT.set(key, timestamps);
+    RATE_LIMIT.set(deviceHash, timestamps);
     return true;
 }
 
@@ -63,9 +59,9 @@ function getLockDuration(clashCount) {
     return -1;
 }
 
-function generateCode() {
+function generateCode(prefix = 'GWBHJ') {
     const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-    let code = 'GWBHJ';
+    let code = prefix;
     for (let i = 0; i < 4; i++) {
         code += '-';
         for (let j = 0; j < 4; j++) {
@@ -75,7 +71,22 @@ function generateCode() {
     return code;
 }
 
-async function signLicense(licenseObj) {
+function toBase64(bytes) {
+    let binary = '';
+    for (const byte of bytes) binary += String.fromCharCode(byte);
+    return btoa(binary);
+}
+
+async function signMessage(privateKeyHex, message) {
+    if (!privateKeyHex || privateKeyHex.startsWith('REPLACE_')) {
+        throw new Error('ED25519_PRIVATE_KEY is not configured');
+    }
+    const bytes = new TextEncoder().encode(message);
+    const sig = await sign(bytes, privateKeyHex);
+    return toBase64(sig);
+}
+
+async function signLicense(env, licenseObj) {
     const fields = [
         licenseObj.code_id,
         licenseObj.device_hash,
@@ -87,115 +98,58 @@ async function signLicense(licenseObj) {
         String(licenseObj.lock_until || 0),
         String(licenseObj.clash_count)
     ];
-    const message = fields.join('|');
-    const messageBytes = new TextEncoder().encode(message);
-    const sig = await sign(messageBytes, PRIVATE_KEY_HEX);
-    return btoa(String.fromCharCode(...sig));
+    return signMessage(getEnvValue(env, 'ED25519_PRIVATE_KEY'), fields.join('|'));
 }
 
-async function signClashInfo(clashObj) {
+async function signClashInfo(env, clashObj) {
     const message = JSON.stringify({
         code: clashObj.code,
         is_kicked: clashObj.is_kicked,
         lock_status: clashObj.lock_status,
         lock_remaining_seconds: clashObj.lock_remaining_seconds
     });
-    const messageBytes = new TextEncoder().encode(message);
-    const sig = await sign(messageBytes, PRIVATE_KEY_HEX);
-    return btoa(String.fromCharCode(...sig));
+    return signMessage(getEnvValue(env, 'ED25519_PRIVATE_KEY'), message);
 }
 
-function readKV(kv, key) {
-    return kv ? kv.get(key, { type: 'json' }) : null;
+async function readKV(kv, key) {
+    if (!kv) throw new Error('GWBHJ_KV is not bound');
+    return kv.get(key, { type: 'json' });
 }
 
-function writeKV(kv, key, value) {
-    return kv ? kv.put(key, JSON.stringify(value)) : null;
+async function writeKV(kv, key, value) {
+    if (!kv) throw new Error('GWBHJ_KV is not bound');
+    return kv.put(key, JSON.stringify(value));
 }
 
-export default {
-    async fetch(request, env) {
-        const url = new URL(request.url);
-        const path = url.pathname;
-        const method = request.method;
-
-        if (method === 'OPTIONS') {
-            return new Response(null, {
-                headers: {
-                    'Access-Control-Allow-Origin': '*',
-                    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-                    'Access-Control-Allow-Headers': 'Content-Type'
-                }
-            });
-        }
-
-        const KV = env.GWBHJ_KV || null;
-
-        try {
-            if (path === '/api/bind' && method === 'POST') {
-                return await handleBind(request, KV);
-            }
-            if (path === '/api/verify' && method === 'POST') {
-                return await handleVerify(request, KV);
-            }
-            if (path === '/api/clash-info' && method === 'POST') {
-                return await handleClashInfo(request, KV);
-            }
-            if (path === '/admin/generate' && method === 'POST') {
-                return await handleAdminGenerate(request, KV);
-            }
-            if (path === '/admin/delete' && method === 'POST') {
-                return await handleAdminDelete(request, KV);
-            }
-            if (path === '/admin/list' && method === 'GET') {
-                return await handleAdminList(request, KV);
-            }
-            if (path === '/health') {
-                return jsonResp({ status: 'ok', time: Math.floor(Date.now() / 1000) });
-            }
-            return errorResp('Not found', 404);
-        } catch (e) {
-            console.error(e);
-            return errorResp('Internal server error', 500);
-        }
-    }
-};
-
-async function handleBind(request, KV) {
+async function handleBind(request, env, kv) {
     const body = await request.json();
     const { code, device_hash, device_info, nonce, ts } = body;
 
     if (!code || !device_hash) return errorResp('Missing required fields');
-    if (ts && !verifyTimestamp(ts)) return errorResp('Invalid timestamp', 403);
-    if (nonce && !checkNonce(nonce)) return errorResp('Replay detected', 403);
+    if (!verifyTimestamp(ts)) return errorResp('Invalid timestamp', 403);
+    if (!checkNonce(nonce)) return errorResp('Replay detected', 403);
     if (!checkRateLimit(device_hash)) return errorResp('Rate limited', 429);
 
-    const codeData = await readKV(KV, `code:${code}`);
+    const codeData = await readKV(kv, `code:${code}`);
     if (!codeData) return errorResp('Invalid code', 400);
-
     if (codeData.status === 'permanent_locked') return errorResp('Code permanently locked', 429);
 
-    if (codeData.status === 'locked') {
-        if (codeData.lock_until && Date.now() / 1000 < codeData.lock_until) {
-            return errorResp('Code is locked', 409);
-        }
-        codeData.status = 'active';
-        codeData.lock_until = null;
+    const now = Math.floor(Date.now() / 1000);
+    if (codeData.status === 'locked' && codeData.lock_until && now < codeData.lock_until) {
+        return errorResp('Code is locked', 409);
     }
 
-    const now = Math.floor(Date.now() / 1000);
     const isDifferentDevice = codeData.active_device_hash && codeData.active_device_hash !== device_hash;
-
     if (isDifferentDevice) {
         codeData.clash_count = (codeData.clash_count || 0) + 1;
         const lockDuration = getLockDuration(codeData.clash_count);
-
         if (lockDuration === -1) {
             codeData.status = 'permanent_locked';
-            await writeKV(KV, `code:${code}`, codeData);
+            await writeKV(kv, `code:${code}`, codeData);
             return errorResp('Code permanently locked due to excessive clashes', 429);
         }
-
+        codeData.lock_until = now + lockDuration;
+        codeData.status = 'locked';
         codeData.clash_log = codeData.clash_log || [];
         codeData.clash_log.push({
             time: new Date().toISOString(),
@@ -203,24 +157,17 @@ async function handleBind(request, KV) {
             device_info: device_info || {},
             action: 'kicked previous device'
         });
-
-        const lockDurationPrev = getLockDuration(codeData.clash_count - 1);
-        if (lockDurationPrev && lockDurationPrev > 0) {
-            codeData.lock_until = now + lockDuration;
-            codeData.status = 'locked';
-        }
     }
 
     codeData.active_device_hash = device_hash;
     codeData.active_device_info = device_info || {};
     codeData.active_time = new Date().toISOString();
     codeData.status = 'active';
-
-    await writeKV(KV, `code:${code}`, codeData);
+    await writeKV(kv, `code:${code}`, codeData);
 
     const license = {
         code_id: code,
-        device_hash: device_hash,
+        device_hash,
         active: true,
         revoked: false,
         last_server_ok: now,
@@ -230,54 +177,41 @@ async function handleBind(request, KV) {
         clash_count: codeData.clash_count || 0,
         signature: ''
     };
-
-    license.signature = await signLicense(license);
-
+    license.signature = await signLicense(env, license);
     return jsonResp(license);
 }
 
-async function handleVerify(request, KV) {
+async function handleVerify(request, env, kv) {
     const body = await request.json();
     const { code, device_hash, nonce, ts } = body;
 
     if (!code || !device_hash) return errorResp('Missing required fields');
-    if (ts && !verifyTimestamp(ts)) return errorResp('Invalid timestamp', 403);
-    if (nonce && !checkNonce(nonce)) return errorResp('Replay detected', 403);
+    if (!verifyTimestamp(ts)) return errorResp('Invalid timestamp', 403);
+    if (!checkNonce(nonce)) return errorResp('Replay detected', 403);
     if (!checkRateLimit(device_hash)) return errorResp('Rate limited', 429);
 
-    const codeData = await readKV(KV, `code:${code}`);
+    const codeData = await readKV(kv, `code:${code}`);
     if (!codeData) return errorResp('Invalid code', 400);
-
-    if (codeData.status === 'permanent_locked') {
-        return errorResp('Code permanently locked', 429);
-    }
+    if (codeData.status === 'permanent_locked') return errorResp('Code permanently locked', 429);
 
     const now = Math.floor(Date.now() / 1000);
-
     if (codeData.active_device_hash && codeData.active_device_hash !== device_hash) {
         codeData.clash_count = (codeData.clash_count || 0) + 1;
         const lockDuration = getLockDuration(codeData.clash_count);
-
         if (lockDuration === -1) {
             codeData.status = 'permanent_locked';
-            await writeKV(KV, `code:${code}`, codeData);
+            await writeKV(kv, `code:${code}`, codeData);
             return errorResp('Permanently locked', 429);
         }
-
+        codeData.lock_until = now + lockDuration;
+        codeData.status = 'locked';
         codeData.clash_log = codeData.clash_log || [];
         codeData.clash_log.push({
             time: new Date().toISOString(),
             device_hash_prefix: device_hash.substring(0, 16),
             action: 'clash detected on verify'
         });
-
-        if (lockDuration > 0) {
-            codeData.lock_until = now + lockDuration;
-            codeData.status = 'locked';
-        }
-
-        await writeKV(KV, `code:${code}`, codeData);
-
+        await writeKV(kv, `code:${code}`, codeData);
         return jsonResp({
             error: 'Device clash detected',
             is_kicked: true,
@@ -289,7 +223,7 @@ async function handleVerify(request, KV) {
 
     const license = {
         code_id: code,
-        device_hash: device_hash,
+        device_hash,
         active: codeData.status === 'active',
         revoked: codeData.status === 'revoked',
         last_server_ok: now,
@@ -299,56 +233,49 @@ async function handleVerify(request, KV) {
         clash_count: codeData.clash_count || 0,
         signature: ''
     };
-
-    license.signature = await signLicense(license);
-
+    license.signature = await signLicense(env, license);
     return jsonResp(license);
 }
 
-async function handleClashInfo(request, KV) {
+async function handleClashInfo(request, env, kv) {
     const body = await request.json();
     const { code, device_hash } = body;
-
     if (!code || !device_hash) return errorResp('Missing required fields');
 
-    const codeData = await readKV(KV, `code:${code}`);
+    const codeData = await readKV(kv, `code:${code}`);
     if (!codeData) return errorResp('Code not found', 404);
 
-    const isKicked = codeData.active_device_hash && codeData.active_device_hash !== device_hash;
     const now = Math.floor(Date.now() / 1000);
-    let lockRemaining = 0;
-    if (codeData.lock_until && codeData.lock_until > now) {
-        lockRemaining = codeData.lock_until - now;
-    }
+    const isKicked = codeData.active_device_hash && codeData.active_device_hash !== device_hash;
+    const lockRemaining = codeData.lock_until && codeData.lock_until > now ? codeData.lock_until - now : 0;
 
     const clashInfo = {
-        code: code,
+        code,
         current_device_hash: device_hash,
         is_kicked: isKicked,
         kick_details: codeData.clash_log || [],
         lock_status: codeData.status === 'permanent_locked' ? 'permanent' : (lockRemaining > 0 ? 'locked' : 'none'),
         lock_remaining_seconds: lockRemaining,
-        next_lock_level: codeData.clash_count < 10 ? 'escalating' : 'permanent',
+        next_lock_level: (codeData.clash_count || 0) < 10 ? 'escalating' : 'permanent',
         signature: ''
     };
-
-    clashInfo.signature = await signClashInfo(clashInfo);
-
+    clashInfo.signature = await signClashInfo(env, clashInfo);
     return jsonResp(clashInfo);
 }
 
-async function handleAdminGenerate(request, KV) {
+async function handleAdminGenerate(request, env, kv) {
     const body = await request.json();
+    const adminKey = getEnvValue(env, 'ADMIN_KEY');
     const { count, prefix, admin_key } = body;
 
-    if (admin_key !== ADMIN_KEY) return errorResp('Unauthorized', 403);
+    if (!adminKey || admin_key !== adminKey) return errorResp('Unauthorized', 403);
     if (!count || count < 1 || count > 100) return errorResp('Count must be 1-100');
 
     const codes = [];
     for (let i = 0; i < count; i++) {
-        const code = prefix ? `${prefix}-${generateCode().substring(6)}` : generateCode();
-        const codeData = {
-            code: code,
+        const code = generateCode(prefix || 'GWBHJ');
+        await writeKV(kv, `code:${code}`, {
+            code,
             status: 'unused',
             active_device_hash: null,
             active_device_info: null,
@@ -357,47 +284,44 @@ async function handleAdminGenerate(request, KV) {
             lock_until: null,
             clash_log: [],
             created_at: new Date().toISOString()
-        };
-        await writeKV(KV, `code:${code}`, codeData);
+        });
         codes.push(code);
     }
-
-    return jsonResp({ codes: codes, count: codes.length });
+    return jsonResp({ codes, count: codes.length });
 }
 
-async function handleAdminDelete(request, KV) {
+async function handleAdminDelete(request, env, kv) {
     const body = await request.json();
+    const adminKey = getEnvValue(env, 'ADMIN_KEY');
     const { codes, admin_key } = body;
 
-    if (admin_key !== ADMIN_KEY) return errorResp('Unauthorized', 403);
+    if (!adminKey || admin_key !== adminKey) return errorResp('Unauthorized', 403);
     if (!codes || !Array.isArray(codes)) return errorResp('Codes must be an array');
 
     const deleted = [];
     for (const code of codes) {
         const key = `code:${code}`;
-        const exists = await readKV(KV, key);
+        const exists = await readKV(kv, key);
         if (exists) {
-            await KV.delete(key);
+            await kv.delete(key);
             deleted.push(code);
         }
     }
-
-    return jsonResp({ deleted: deleted });
+    return jsonResp({ deleted });
 }
 
-async function handleAdminList(request, KV) {
+async function handleAdminList(request, env, kv) {
     const url = new URL(request.url);
+    const adminKey = getEnvValue(env, 'ADMIN_KEY');
     const admin_key = url.searchParams.get('admin_key');
 
-    if (admin_key !== ADMIN_KEY) return errorResp('Unauthorized', 403);
+    if (!adminKey || admin_key !== adminKey) return errorResp('Unauthorized', 403);
 
-    if (!KV) return errorResp('KV not available', 500);
-
-    const list = await KV.list({ prefix: 'code:' });
+    const list = await kv.list({ prefix: 'code:' });
     const codes = [];
-
-    for (const key of list.keys) {
-        const data = await KV.get(key.name, { type: 'json' });
+    for (const item of list.keys || []) {
+        const key = item.key || item.name;
+        const data = await kv.get(key, { type: 'json' });
         if (data) {
             codes.push({
                 code: data.code,
@@ -410,6 +334,33 @@ async function handleAdminList(request, KV) {
             });
         }
     }
+    return jsonResp({ codes, total: codes.length });
+}
 
-    return jsonResp({ codes: codes, total: codes.length });
+export async function onRequest(context) {
+    const { request, env } = context;
+    const url = new URL(request.url);
+    const path = url.pathname;
+    const method = request.method;
+
+    if (method === 'OPTIONS') return jsonResp({}, 204);
+
+    try {
+        const kv = getKV(env);
+
+        if (path === '/health') {
+            return jsonResp({ status: 'ok', platform: 'edgeone', time: Math.floor(Date.now() / 1000) });
+        }
+        if (path === '/api/bind' && method === 'POST') return handleBind(request, env, kv);
+        if (path === '/api/verify' && method === 'POST') return handleVerify(request, env, kv);
+        if (path === '/api/clash-info' && method === 'POST') return handleClashInfo(request, env, kv);
+        if (path === '/admin/generate' && method === 'POST') return handleAdminGenerate(request, env, kv);
+        if (path === '/admin/delete' && method === 'POST') return handleAdminDelete(request, env, kv);
+        if (path === '/admin/list' && method === 'GET') return handleAdminList(request, env, kv);
+
+        return errorResp('Not found', 404);
+    } catch (e) {
+        console.error(e);
+        return errorResp(e.message || 'Internal server error', 500);
+    }
 }
