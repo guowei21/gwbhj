@@ -86,15 +86,7 @@ jobs:
             cp ".build/abis/$abi/$abi.so" "$STAGE/zygisk/"
           done
 
-          cat > "$STAGE/module.prop" <<PROPEOF
-id=gwbhj_jailbreak
-name=过强标黑机
-version=$VERSION
-versionCode=$VERSION_CODE
-author=蜡笔不小心
-description=支持ANDROID_ID伪造与序列号控制,白名单,自带越狱免解过环境
-minMagisk=20.4
-PROPEOF
+          printf 'id=gwbhj_jailbreak\nname=过强标黑机\nversion=%s\nversionCode=%s\nauthor=蜡笔不小心\ndescription=支持ANDROID_ID伪造与序列号控制,白名单,自带越狱免解过环境\nminMagisk=20.4\n' "$VERSION" "$VERSION_CODE" > "$STAGE/module.prop"
 
           chmod 0755 "$STAGE/customize.sh" "$STAGE/service.sh" "$STAGE/uninstall.sh" \
                      "$STAGE/action.sh" \
