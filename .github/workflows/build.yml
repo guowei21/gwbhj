@@ -86,15 +86,15 @@ jobs:
             cp ".build/abis/$abi/$abi.so" "$STAGE/zygisk/"
           done
 
-          cat > "$STAGE/module.prop" <<EOF
-          id=gwbhj_jailbreak
-          name=过强标黑机
-          version=$VERSION
-          versionCode=$VERSION_CODE
-          author=蜡笔不小心
-          description=支持ANDROID_ID伪造与序列号控制,白名单,自带越狱免解过环境
-          minMagisk=20.4
-          EOF
+          cat > "$STAGE/module.prop" <<PROPEOF
+id=gwbhj_jailbreak
+name=过强标黑机
+version=$VERSION
+versionCode=$VERSION_CODE
+author=蜡笔不小心
+description=支持ANDROID_ID伪造与序列号控制,白名单,自带越狱免解过环境
+minMagisk=20.4
+PROPEOF
 
           chmod 0755 "$STAGE/customize.sh" "$STAGE/service.sh" "$STAGE/uninstall.sh" \
                      "$STAGE/action.sh" \
@@ -108,4 +108,4 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: GWBHJ-module
-          path: GWBHJ-v1.1.0.zip
+          path: GWBHJ-v1.2.1.zip
