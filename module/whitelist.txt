@@ -1,0 +1,14 @@
+# GWBHJ Whitelist — one package per line
+# Tag (colon-suffix):
+#   :blocked   → force unmount cpuinfo for this app (COW prop spoof still applies)
+#
+# Note: COW prop spoof and CPU mount are ON by default for ALL whitelisted apps.
+#       Use :blocked ONLY for sensitive apps (e.g. banking) that need real CPU info.
+#
+# Examples:
+#   com.tencent.tmgp.dfm
+#   com.coolapk.market
+#   com.icbc:blocked
+com.tencent.tmgp.dfm
+com.liuzh.deviceinfo
+com.coolapk.market
