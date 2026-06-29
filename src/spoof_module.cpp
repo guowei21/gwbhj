@@ -112,6 +112,7 @@ struct PropOverride {
     std::string value;
 };
 
+// 普通属性 — 对所有白名单应用伪装(不含版本号/VNDK/ABI 列表)
 static const std::vector<PropOverride> PROP_OVERRIDES = {
     {"ro.product.model",             g_dev_model},
     {"ro.product.brand",             g_dev_brand},
@@ -127,9 +128,6 @@ static const std::vector<PropOverride> PROP_OVERRIDES = {
     {"ro.build.description",         g_dev_description},
     {"ro.build.characteristics",     g_dev_characteristics},
     {"ro.build.version.incremental", g_dev_incremental},
-    {"ro.build.version.release",     g_dev_release},
-    {"ro.build.version.sdk",         g_dev_sdk},
-    {"ro.build.version.security_patch", g_dev_security_patch},
     {"ro.board.platform",            g_dev_platform},
     {"ro.hardware",                  g_dev_hardware},
     {"ro.hardware.chipname",         g_dev_chipname},
@@ -139,7 +137,6 @@ static const std::vector<PropOverride> PROP_OVERRIDES = {
     {"ro.product.hardwareversion",   g_dev_hw_version},
     {"ro.boot.product.hardware.sku", g_dev_hw_sku},
     {"ro.product.ab_ota_partitions", g_dev_ab_ota},
-    {"ro.product.vndk.version",      g_dev_vndk_version},
     {"ro.product.system.model",      g_dev_model},
     {"ro.product.system.brand",      g_dev_brand},
     {"ro.product.system.device",     g_dev_device},
@@ -151,14 +148,25 @@ static const std::vector<PropOverride> PROP_OVERRIDES = {
     {"ro.product.vendor.name",       g_dev_product},
     {"ro.product.vendor.manufacturer", g_dev_manufacturer},
     {"ro.product.cpu.abi",           g_dev_cpu_abi},
-    {"ro.product.cpu.abilist",       g_dev_cpu_abi},
-    {"ro.product.cpu.abilist64",     g_dev_cpu_abi},
     {"ro.hardware.gpu",              g_dev_gpu},
     {"ro.gpu.vendor",                g_dev_brand},
     {"ro.gpu.model",                 g_dev_gpu},
     {"ro.opengles.version",          "196610"},
 };
 static const size_t PROP_OVERRIDE_COUNT = PROP_OVERRIDES.size();
+
+// 版本号相关属性 — 仅对腾讯游戏类应用(三角洲等)动态伪装。
+// 其它应用(酷安/设备信息类)读到伪造 SDK 后调用不存在的 API → NoSuchMethodError 闪退,
+// 因此这类属性不进默认 PROP_OVERRIDES,由 isTencentGamePackage() 判断后单独应用。
+static const std::vector<PropOverride> PROP_OVERRIDES_VERSION = {
+    {"ro.build.version.release",        g_dev_release},
+    {"ro.build.version.sdk",            g_dev_sdk},
+    {"ro.build.version.security_patch", g_dev_security_patch},
+    {"ro.product.vndk.version",         g_dev_vndk_version},
+    {"ro.product.cpu.abilist",          g_dev_cpu_abi},
+    {"ro.product.cpu.abilist64",        g_dev_cpu_abi},
+};
+static const size_t PROP_OVERRIDE_VERSION_COUNT = PROP_OVERRIDES_VERSION.size();
 
 // ─────────────────────────────────────────
 // /proc/cpuinfo — Kirin 9020: 2 big (0xd4f) + 6 little (0xd46) = 8 cores
@@ -366,6 +374,22 @@ static bool isBlockedPackage(const std::string& process_name) {
     size_t colon = process_name.find(':');
     if (colon == std::string::npos) return false;
     return g_blocked_packages.count(process_name.substr(0, colon));
+}
+
+// ─────────────────────────────────────────
+// 腾讯游戏类应用识别 — 仅这类应用需要伪装安卓版本
+// 三角洲行动 (com.tencent.tmgp.dfm) 等腾讯系游戏的包名均以 com.tencent.tmgp 开头,
+// 对这类应用伪装 SDK / release / security_patch / VNDK / abilist 可绕过机型检测;
+// 其它应用(酷安/设备信息/银行类)读到伪造版本号会触发 NoSuchMethodError 或 dlopen
+// 失败 → 闪退,因此版本号伪装只对这类应用启用(动态伪装策略)。
+// ─────────────────────────────────────────
+static bool isTencentGamePackage(const std::string& process_name) {
+    std::string base = process_name;
+    size_t colon = base.find(':');
+    if (colon != std::string::npos) base = base.substr(0, colon);
+    // com.tencent.tmgp.* — 腾讯手游通系列(三角洲、和平精英、王者等)
+    if (base.rfind(OBF("com.tencent.tmgp"), 0) == 0) return true;
+    return false;
 }
 
 // ─────────────────────────────────────────
@@ -602,6 +626,11 @@ public:
 
         LOGI("%s: in whitelist [blocked=%d], applying spoof", pkg.c_str(), blocked);
 
+        // 动态伪装:仅对腾讯游戏类应用(三角洲等)伪装安卓版本号相关属性。
+        // 其它应用(酷安/设备信息类)读伪造 SDK 会 NoSuchMethodError 闪退,故跳过。
+        bool spoof_version = isTencentGamePackage(pkg);
+        LOGI("%s: version spoof = %d", pkg.c_str(), spoof_version);
+
         buildClass = nullptr;
         versionClass = nullptr;
         modelField = brandField = deviceField = manufacturerField = nullptr;
@@ -614,11 +643,19 @@ public:
         for (size_t i = 0; i < PROP_OVERRIDE_COUNT; i++) {
             forgeProp(PROP_OVERRIDES[i].name, PROP_OVERRIDES[i].value.c_str());
         }
+        if (spoof_version) {
+            for (size_t i = 0; i < PROP_OVERRIDE_VERSION_COUNT; i++) {
+                forgeProp(PROP_OVERRIDES_VERSION[i].name,
+                           PROP_OVERRIDES_VERSION[i].value.c_str());
+            }
+        }
         if (!current_serial.empty()) {
             forgeProp("ro.boot.serialno", current_serial.c_str());
             forgeProp("ro.serialno", current_serial.c_str());
         }
-        LOGI("[PROP] COW spoof done (%zu props + serial)", PROP_OVERRIDE_COUNT);
+        LOGI("[PROP] COW spoof done (%zu props%s + serial)",
+             PROP_OVERRIDE_COUNT + (spoof_version ? PROP_OVERRIDE_VERSION_COUNT : 0),
+             spoof_version ? " + version" : "");
 
         if (blocked) {
             executeCompanionCommand(0x00);              // unmount
