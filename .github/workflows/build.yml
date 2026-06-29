@@ -74,8 +74,8 @@ jobs:
 
       - name: Package module
         run: |
-          VERSION="1.2.1"
-          VERSION_CODE="121"
+          VERSION="1.2.2"
+          VERSION_CODE="122"
           STAGE=".build/stage"
 
           mkdir -p "$STAGE/zygisk"
@@ -100,4 +100,4 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: GWBHJ-module
-          path: GWBHJ-v1.2.1.zip
+          path: GWBHJ-v1.2.2.zip

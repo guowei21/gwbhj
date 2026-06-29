@@ -13,8 +13,8 @@ set -euo pipefail
 REPO="$(cd "$(dirname "$0")" && pwd)"
 cd "$REPO"
 
-VERSION="${1:-1.2.1}"
-VERSION_CODE="${2:-121}"
+VERSION="${1:-1.2.2}"
+VERSION_CODE="${2:-122}"
 OUT_DIR="$REPO/output"
 BUILD_DIR="$REPO/.build"
 STAGE="$BUILD_DIR/module"

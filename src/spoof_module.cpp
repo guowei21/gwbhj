@@ -85,19 +85,16 @@ static const std::string g_dev_device        = OBF("HWPLU");
 static const std::string g_dev_model         = OBF("PLU-AL10");
 static const std::string g_dev_product       = g_dev_model;             // PLU-AL10
 static const std::string g_dev_board         = OBF("PLU");
-static const std::string g_dev_fingerprint   = OBF("HUAWEI/HWPLU/PLU-AL10:12/HUAWEIPLU-AL10/104.3.0.198C00:user/release-keys");
+// NOTE: fingerprint is built at runtime to preserve the real Android version
+// (e.g. on Android 16 / API 36, forging SDK=31 causes crashes due to
+//  mismatch with the unforgeable Build.VERSION.SDK_INT constant).
+// We only replace the device identity portion (brand/device/model)
+// and keep the real OS version, build ID, and keys.
 static const std::string g_dev_hardware      = OBF("kirin9020");
 static const std::string g_dev_platform      = OBF("HiSilicon");
 static const std::string g_dev_chipname      = OBF("Kirin 9020");
-static const std::string g_dev_build_id      = OBF("HUAWEIPLU-AL10");
-static const std::string g_dev_display_id    = g_dev_build_id;          // HUAWEIPLU-AL10
 static const std::string g_dev_build_tags    = OBF("release-keys");
 static const std::string g_dev_build_type    = OBF("user");
-static const std::string g_dev_release       = OBF("12");
-static const std::string g_dev_sdk           = OBF("31");
-static const std::string g_dev_vndk_version  = g_dev_sdk;               // 31
-static const std::string g_dev_security_patch = OBF("2021-10-05");
-static const std::string g_dev_incremental   = OBF("104.3.0.198C00");
 static const std::string g_dev_description   = OBF("PLU-AL10-user 104.3.0 HUAWEIPLU-AL10 198-CHN-LGRP1 release-keys");
 static const std::string g_dev_gpu           = OBF("Maleoon 920");
 static const std::string g_dev_cpu_abi       = OBF("arm64-v8a");
@@ -107,11 +104,38 @@ static const std::string g_dev_hw_sku        = g_dev_model;             // PLU-A
 static const std::string g_dev_ab_ota        = OBF("system");
 static const std::string g_dev_characteristics = OBF("default");
 
+// Read the real system property at runtime (before any COW override).
+// Used to preserve version-related props that must match the running OS.
+static std::string getRealProp(const char* name) {
+    char buf[PROP_VALUE_MAX] = {0};
+    __system_property_get(name, buf);
+    return std::string(buf);
+}
+
+// Build a device fingerprint that preserves the real OS version.
+// Format: brand/device/model:release/build_id/incremental:type/tags
+// e.g. HUAWEI/HWPLU/PLU-AL10:16/AB1A.240612.004/123456:user/release-keys
+static std::string buildFingerprint() {
+    std::string release    = getRealProp("ro.build.version.release");
+    std::string buildId    = getRealProp("ro.build.id");
+    std::string incremental = getRealProp("ro.build.version.incremental");
+    if (release.empty())    release    = OBF("16");
+    if (buildId.empty())    buildId    = OBF("AB1A.240612.004");
+    if (incremental.empty()) incremental = OBF("123456");
+    return g_dev_brand + "/" + g_dev_device + "/" + g_dev_model
+         + ":" + release + "/" + buildId + "/" + incremental
+         + ":" + g_dev_build_type + "/" + g_dev_build_tags;
+}
+
 struct PropOverride {
     const char* name;
     std::string value;
 };
 
+// Version-related props are excluded — they must match the real OS to avoid
+// crashes on newer Android versions (Build.VERSION.SDK_INT is a compile-time
+// constant and cannot be overridden; a mismatch with ro.build.version.sdk
+// causes apps to crash or detect inconsistency).
 static const std::vector<PropOverride> PROP_OVERRIDES = {
     {"ro.product.model",             g_dev_model},
     {"ro.product.brand",             g_dev_brand},
@@ -119,17 +143,16 @@ static const std::vector<PropOverride> PROP_OVERRIDES = {
     {"ro.product.device",            g_dev_device},
     {"ro.product.name",              g_dev_product},
     {"ro.product.board",             g_dev_board},
-    {"ro.build.fingerprint",         g_dev_fingerprint},
-    {"ro.build.id",                  g_dev_build_id},
-    {"ro.build.display.id",          g_dev_display_id},
+    // ro.build.fingerprint: built at runtime with real OS version
+    // ro.build.id: kept real (matches SDK_INT)
+    // ro.build.display.id: kept real
     {"ro.build.tags",                g_dev_build_tags},
     {"ro.build.type",                g_dev_build_type},
-    {"ro.build.description",         g_dev_description},
     {"ro.build.characteristics",     g_dev_characteristics},
-    {"ro.build.version.incremental", g_dev_incremental},
-    {"ro.build.version.release",     g_dev_release},
-    {"ro.build.version.sdk",         g_dev_sdk},
-    {"ro.build.version.security_patch", g_dev_security_patch},
+    // ro.build.version.incremental: kept real
+    // ro.build.version.release: kept real
+    // ro.build.version.sdk: kept real
+    // ro.build.version.security_patch: kept real
     {"ro.board.platform",            g_dev_platform},
     {"ro.hardware",                  g_dev_hardware},
     {"ro.hardware.chipname",         g_dev_chipname},
@@ -139,24 +162,24 @@ static const std::vector<PropOverride> PROP_OVERRIDES = {
     {"ro.product.hardwareversion",   g_dev_hw_version},
     {"ro.boot.product.hardware.sku", g_dev_hw_sku},
     {"ro.product.ab_ota_partitions", g_dev_ab_ota},
-    {"ro.product.vndk.version",      g_dev_vndk_version},
-    {"ro.product.system.model",      g_dev_model},
-    {"ro.product.system.brand",      g_dev_brand},
-    {"ro.product.system.device",     g_dev_device},
-    {"ro.product.system.name",       g_dev_product},
-    {"ro.product.system.manufacturer", g_dev_manufacturer},
-    {"ro.product.vendor.model",      g_dev_model},
-    {"ro.product.vendor.brand",      g_dev_brand},
-    {"ro.product.vendor.device",     g_dev_device},
-    {"ro.product.vendor.name",       g_dev_product},
-    {"ro.product.vendor.manufacturer", g_dev_manufacturer},
-    {"ro.product.cpu.abi",           g_dev_cpu_abi},
-    {"ro.product.cpu.abilist",       g_dev_cpu_abi},
-    {"ro.product.cpu.abilist64",     g_dev_cpu_abi},
-    {"ro.hardware.gpu",              g_dev_gpu},
-    {"ro.gpu.vendor",                g_dev_brand},
-    {"ro.gpu.model",                 g_dev_gpu},
-    {"ro.opengles.version",          "196610"},
+    // ro.product.vndk.version: kept real
+    {"ro.product.system.model",           g_dev_model},
+    {"ro.product.system.brand",           g_dev_brand},
+    {"ro.product.system.device",          g_dev_device},
+    {"ro.product.system.name",            g_dev_product},
+    {"ro.product.system.manufacturer",    g_dev_manufacturer},
+    {"ro.product.vendor.model",           g_dev_model},
+    {"ro.product.vendor.brand",           g_dev_brand},
+    {"ro.product.vendor.device",          g_dev_device},
+    {"ro.product.vendor.name",            g_dev_product},
+    {"ro.product.vendor.manufacturer",    g_dev_manufacturer},
+    {"ro.product.cpu.abi",                g_dev_cpu_abi},
+    {"ro.product.cpu.abilist",            g_dev_cpu_abi},
+    {"ro.product.cpu.abilist64",          g_dev_cpu_abi},
+    {"ro.hardware.gpu",                   g_dev_gpu},
+    {"ro.gpu.vendor",                     g_dev_brand},
+    {"ro.gpu.model",                      g_dev_gpu},
+    {"ro.opengles.version",               "196610"},
 };
 static const size_t PROP_OVERRIDE_COUNT = PROP_OVERRIDES.size();
 
@@ -614,11 +637,29 @@ public:
         for (size_t i = 0; i < PROP_OVERRIDE_COUNT; i++) {
             forgeProp(PROP_OVERRIDES[i].name, PROP_OVERRIDES[i].value.c_str());
         }
+
+        // Runtime-built props: preserve real OS version in device identity
+        {
+            std::string fp = buildFingerprint();
+            forgeProp("ro.build.fingerprint", fp.c_str());
+            // Build description from the same components
+            std::string release    = getRealProp("ro.build.version.release");
+            std::string buildId    = getRealProp("ro.build.id");
+            std::string incremental = getRealProp("ro.build.version.incremental");
+            if (release.empty())    release    = OBF("16");
+            if (buildId.empty())    buildId    = OBF("AB1A.240612.004");
+            if (incremental.empty()) incremental = OBF("123456");
+            std::string desc = g_dev_model + "-" + g_dev_build_type + " " + incremental
+                             + " " + buildId + " " + g_dev_build_tags;
+            forgeProp("ro.build.description", desc.c_str());
+            forgeProp("ro.build.display.id", (buildId + "." + incremental).c_str());
+        }
+
         if (!current_serial.empty()) {
             forgeProp("ro.boot.serialno", current_serial.c_str());
             forgeProp("ro.serialno", current_serial.c_str());
         }
-        LOGI("[PROP] COW spoof done (%zu props + serial)", PROP_OVERRIDE_COUNT);
+        LOGI("[PROP] COW spoof done (%zu props + runtime fingerprint + serial)", PROP_OVERRIDE_COUNT);
 
         if (blocked) {
             executeCompanionCommand(0x00);              // unmount
@@ -728,22 +769,27 @@ private:
             if (env->ExceptionCheck()) env->ExceptionClear();
         };
 
+        // Device identity fields — spoofed
         setStr(buildClass, modelField, g_dev_model);
         setStr(buildClass, brandField, g_dev_brand);
         setStr(buildClass, deviceField, g_dev_device);
         setStr(buildClass, manufacturerField, g_dev_manufacturer);
-        setStr(buildClass, fingerprintField, g_dev_fingerprint);
+        setStr(buildClass, fingerprintField, buildFingerprint());
         setStr(buildClass, productField, g_dev_product);
         setStr(buildClass, boardField, g_dev_platform);
         setStr(buildClass, hardwareField, g_dev_hardware);
-        setStr(buildClass, idField, g_dev_build_id);
-        setStr(buildClass, displayField, g_dev_display_id);
+
+        // Version-sensitive fields — keep real OS values to avoid mismatch
+        // with Build.VERSION.SDK_INT (compile-time constant, unforgeable).
+        // Build.ID and Build.DISPLAY must reflect the real OS build.
+        // (We do NOT set idField / displayField here — they retain their real values.)
 
         if (!serial.empty() && serialField) {
             setStr(buildClass, serialField, serial);
         }
 
-        LOGI("Device spoofed: %s (%s)%s", g_dev_model.c_str(), g_dev_brand.c_str(),
+        LOGI("Device spoofed: %s (%s)%s [fingerprint preserves real OS version]",
+             g_dev_model.c_str(), g_dev_brand.c_str(),
              serial.empty() ? "" : " +serial");
     }
 };
