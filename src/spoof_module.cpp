@@ -127,9 +127,12 @@ static const std::vector<PropOverride> PROP_OVERRIDES = {
     {"ro.build.description",         g_dev_description},
     {"ro.build.characteristics",     g_dev_characteristics},
     {"ro.build.version.incremental", g_dev_incremental},
-    {"ro.build.version.release",     g_dev_release},
-    {"ro.build.version.sdk",         g_dev_sdk},
-    {"ro.build.version.security_patch", g_dev_security_patch},
+    // 版本号相关属性不伪装 — SDK / release / security_patch 必须与真实系统 API 一致,
+    // 否则 App(尤其酷安/设备信息类)读到伪造 SDK 后调用不存在的 API → NoSuchMethodError 闪退。
+    // 如需在确认是 Android 12 (SDK 31) 的设备上恢复伪装,取消下面 3 行注释即可。
+    // {"ro.build.version.release",        g_dev_release},
+    // {"ro.build.version.sdk",            g_dev_sdk},
+    // {"ro.build.version.security_patch", g_dev_security_patch},
     {"ro.board.platform",            g_dev_platform},
     {"ro.hardware",                  g_dev_hardware},
     {"ro.hardware.chipname",         g_dev_chipname},
@@ -139,7 +142,8 @@ static const std::vector<PropOverride> PROP_OVERRIDES = {
     {"ro.product.hardwareversion",   g_dev_hw_version},
     {"ro.boot.product.hardware.sku", g_dev_hw_sku},
     {"ro.product.ab_ota_partitions", g_dev_ab_ota},
-    {"ro.product.vndk.version",      g_dev_vndk_version},
+    // VNDK 版本必须匹配真实系统,否则 App 加载 native 库时 dlopen 失败 → 闪退
+    // {"ro.product.vndk.version",      g_dev_vndk_version},
     {"ro.product.system.model",      g_dev_model},
     {"ro.product.system.brand",      g_dev_brand},
     {"ro.product.system.device",     g_dev_device},
@@ -151,8 +155,11 @@ static const std::vector<PropOverride> PROP_OVERRIDES = {
     {"ro.product.vendor.name",       g_dev_product},
     {"ro.product.vendor.manufacturer", g_dev_manufacturer},
     {"ro.product.cpu.abi",           g_dev_cpu_abi},
-    {"ro.product.cpu.abilist",       g_dev_cpu_abi},
-    {"ro.product.cpu.abilist64",     g_dev_cpu_abi},
+    // ro.product.cpu.abilist 必须是逗号分隔列表,单值会让设备信息类 App 解析越界;
+    // 且在 64-bit only 设备上伪装成支持 32 位 ABI 会导致 App 加载不存在的 native 库 → 闪退。
+    // 让 abilist / abilist64 跟随真实系统,仅保留 abi=arm64-v8a(所有 64 位设备都支持)。
+    // {"ro.product.cpu.abilist",       g_dev_cpu_abi},
+    // {"ro.product.cpu.abilist64",     g_dev_cpu_abi},
     {"ro.hardware.gpu",              g_dev_gpu},
     {"ro.gpu.vendor",                g_dev_brand},
     {"ro.gpu.model",                 g_dev_gpu},
