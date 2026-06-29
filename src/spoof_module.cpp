@@ -6,6 +6,7 @@
  *  Default: COW prop spoof ON, CPU mount ON, ANDROID_ID ON (for whitelisted apps)
  *  Tag (colon-suffix in whitelist.txt):
  *    :blocked   → force unmount cpuinfo (force real CPU for sensitive apps)
+ *    :version   → spoof version props to Android 12 / SDK 31 (for apps that need old OS)
  * ========================================================================== */
 #include <jni.h>
 #include <string>
@@ -104,6 +105,13 @@ static const std::string g_dev_hw_sku        = g_dev_model;             // PLU-A
 static const std::string g_dev_ab_ota        = OBF("system");
 static const std::string g_dev_characteristics = OBF("default");
 
+// ── Android 12 version strings (used when :version tag is set) ──
+static const std::string g_dev_build_id       = OBF("HUAWEIPLU-AL10");
+static const std::string g_dev_release        = OBF("12");
+static const std::string g_dev_sdk            = OBF("31");
+static const std::string g_dev_security_patch = OBF("2021-10-05");
+static const std::string g_dev_incremental    = OBF("104.3.0.198C00");
+
 // Read the real system property at runtime (before any COW override).
 // Used to preserve version-related props that must match the running OS.
 static std::string getRealProp(const char* name) {
@@ -112,16 +120,23 @@ static std::string getRealProp(const char* name) {
     return std::string(buf);
 }
 
-// Build a device fingerprint that preserves the real OS version.
-// Format: brand/device/model:release/build_id/incremental:type/tags
-// e.g. HUAWEI/HWPLU/PLU-AL10:16/AB1A.240612.004/123456:user/release-keys
-static std::string buildFingerprint() {
-    std::string release    = getRealProp("ro.build.version.release");
-    std::string buildId    = getRealProp("ro.build.id");
-    std::string incremental = getRealProp("ro.build.version.incremental");
-    if (release.empty())    release    = OBF("16");
-    if (buildId.empty())    buildId    = OBF("AB1A.240612.004");
-    if (incremental.empty()) incremental = OBF("123456");
+// Build a device fingerprint. When version_spoof=false, preserves the real OS
+// version to avoid mismatch with Build.VERSION.SDK_INT. When version_spoof=true,
+// uses the hardcoded Android 12 version strings (for apps that need old OS).
+static std::string buildFingerprint(bool version_spoof) {
+    std::string release, buildId, incremental;
+    if (version_spoof) {
+        release     = g_dev_release;
+        buildId     = g_dev_build_id;
+        incremental = g_dev_incremental;
+    } else {
+        release     = getRealProp("ro.build.version.release");
+        buildId     = getRealProp("ro.build.id");
+        incremental = getRealProp("ro.build.version.incremental");
+        if (release.empty())     release     = OBF("16");
+        if (buildId.empty())     buildId     = OBF("AB1A.240612.004");
+        if (incremental.empty()) incremental = OBF("123456");
+    }
     return g_dev_brand + "/" + g_dev_device + "/" + g_dev_model
          + ":" + release + "/" + buildId + "/" + incremental
          + ":" + g_dev_build_type + "/" + g_dev_build_tags;
@@ -183,6 +198,17 @@ static const std::vector<PropOverride> PROP_OVERRIDES = {
 };
 static const size_t PROP_OVERRIDE_COUNT = PROP_OVERRIDES.size();
 
+// Version-related props — only applied when :version tag is set.
+// These forge the OS version to Android 12 / SDK 31.
+static const std::vector<PropOverride> VERSION_PROP_OVERRIDES = {
+    {"ro.build.version.sdk",              g_dev_sdk},
+    {"ro.build.version.release",          g_dev_release},
+    {"ro.build.version.security_patch",   g_dev_security_patch},
+    {"ro.build.version.incremental",      g_dev_incremental},
+    {"ro.product.vndk.version",           g_dev_sdk},
+};
+static const size_t VERSION_PROP_COUNT = VERSION_PROP_OVERRIDES.size();
+
 // ─────────────────────────────────────────
 // /proc/cpuinfo — Kirin 9020: 2 big (0xd4f) + 6 little (0xd46) = 8 cores
 // ─────────────────────────────────────────
@@ -222,10 +248,11 @@ static std::string buildCpuinfo() {
 }
 
 // ─────────────────────────────────────────
-// Whitelist cache: package_name -> is_blocked
+// Whitelist cache: package_name -> is_blocked / is_version
 // ─────────────────────────────────────────
 static std::unordered_set<std::string> g_whitelist;
 static std::unordered_set<std::string> g_blocked_packages;
+static std::unordered_set<std::string> g_version_packages;
 static std::string g_serial;
 static std::string g_android_id;
 static std::mutex g_data_mutex;
@@ -266,6 +293,28 @@ static bool hasBlockedTag(const std::string& line) {
             start = end + 1;
         }
         if (trim(tag) == "blocked") return true;
+    }
+    return false;
+}
+
+static bool hasVersionTag(const std::string& line) {
+    std::string entry = trim(line);
+    size_t first_colon = entry.find(':');
+    if (first_colon == std::string::npos) return false;
+
+    std::string tags_part = entry.substr(first_colon + 1);
+    size_t start = 0;
+    while (start < tags_part.length()) {
+        size_t end = tags_part.find(':', start);
+        std::string tag;
+        if (end == std::string::npos) {
+            tag = tags_part.substr(start);
+            start = tags_part.length();
+        } else {
+            tag = tags_part.substr(start, end - start);
+            start = end + 1;
+        }
+        if (trim(tag) == "version") return true;
     }
     return false;
 }
@@ -315,6 +364,7 @@ static void reloadWhitelistIfNeeded() {
 
     std::unordered_set<std::string> new_list;
     std::unordered_set<std::string> new_blocked;
+    std::unordered_set<std::string> new_version;
     std::string line;
     while (std::getline(f, line)) {
         std::string trimmed = trim(line);
@@ -324,6 +374,9 @@ static void reloadWhitelistIfNeeded() {
         new_list.insert(pkg);
         if (hasBlockedTag(trimmed)) {
             new_blocked.insert(pkg);
+        }
+        if (hasVersionTag(trimmed)) {
+            new_version.insert(pkg);
         }
     }
 
@@ -335,10 +388,11 @@ static void reloadWhitelistIfNeeded() {
     std::lock_guard<std::mutex> lock(g_data_mutex);
     g_whitelist = std::move(new_list);
     g_blocked_packages = std::move(new_blocked);
+    g_version_packages = std::move(new_version);
     g_whitelist_mtime = st.st_mtime;
     g_whitelist_loaded = true;
-    LOGI("Whitelist reloaded: %zu packages, %zu blocked",
-         g_whitelist.size(), g_blocked_packages.size());
+    LOGI("Whitelist reloaded: %zu packages, %zu blocked, %zu version",
+         g_whitelist.size(), g_blocked_packages.size(), g_version_packages.size());
 }
 
 // ─────────────────────────────────────────
@@ -389,6 +443,13 @@ static bool isBlockedPackage(const std::string& process_name) {
     size_t colon = process_name.find(':');
     if (colon == std::string::npos) return false;
     return g_blocked_packages.count(process_name.substr(0, colon));
+}
+
+static bool isVersionPackage(const std::string& process_name) {
+    if (g_version_packages.count(process_name)) return true;
+    size_t colon = process_name.find(':');
+    if (colon == std::string::npos) return false;
+    return g_version_packages.count(process_name.substr(0, colon));
 }
 
 // ─────────────────────────────────────────
@@ -607,12 +668,14 @@ public:
 
         bool in_whitelist;
         bool blocked;
+        bool version_spoof;
         std::string current_serial;
         std::string current_android_id;
         {
             std::lock_guard<std::mutex> lock(g_data_mutex);
             in_whitelist = isWhitelistedProcess(pkg);
             blocked = isBlockedPackage(pkg);
+            version_spoof = isVersionPackage(pkg);
             current_serial = g_serial;
             current_android_id = g_android_id;
         }
@@ -623,7 +686,7 @@ public:
             return;
         }
 
-        LOGI("%s: in whitelist [blocked=%d], applying spoof", pkg.c_str(), blocked);
+        LOGI("%s: in whitelist [blocked=%d version=%d], applying spoof", pkg.c_str(), blocked, version_spoof);
 
         buildClass = nullptr;
         versionClass = nullptr;
@@ -632,27 +695,43 @@ public:
         idField = displayField = serialField = nullptr;
 
         ensureBuildClass();
-        spoofDevice(current_serial);
+        spoofDevice(current_serial, version_spoof);
 
         for (size_t i = 0; i < PROP_OVERRIDE_COUNT; i++) {
             forgeProp(PROP_OVERRIDES[i].name, PROP_OVERRIDES[i].value.c_str());
         }
 
-        // Runtime-built props: preserve real OS version in device identity
+        // Runtime-built props: fingerprint, description, display
         {
-            std::string fp = buildFingerprint();
+            std::string fp = buildFingerprint(version_spoof);
             forgeProp("ro.build.fingerprint", fp.c_str());
-            // Build description from the same components
-            std::string release    = getRealProp("ro.build.version.release");
-            std::string buildId    = getRealProp("ro.build.id");
-            std::string incremental = getRealProp("ro.build.version.incremental");
-            if (release.empty())    release    = OBF("16");
-            if (buildId.empty())    buildId    = OBF("AB1A.240612.004");
-            if (incremental.empty()) incremental = OBF("123456");
+
+            std::string release, buildId, incremental;
+            if (version_spoof) {
+                release     = g_dev_release;
+                buildId     = g_dev_build_id;
+                incremental = g_dev_incremental;
+            } else {
+                release     = getRealProp("ro.build.version.release");
+                buildId     = getRealProp("ro.build.id");
+                incremental = getRealProp("ro.build.version.incremental");
+                if (release.empty())     release     = OBF("16");
+                if (buildId.empty())     buildId     = OBF("AB1A.240612.004");
+                if (incremental.empty()) incremental = OBF("123456");
+            }
             std::string desc = g_dev_model + "-" + g_dev_build_type + " " + incremental
                              + " " + buildId + " " + g_dev_build_tags;
             forgeProp("ro.build.description", desc.c_str());
             forgeProp("ro.build.display.id", (buildId + "." + incremental).c_str());
+        }
+
+        // :version tag → forge version-related COW props to Android 12 / SDK 31
+        if (version_spoof) {
+            for (size_t i = 0; i < VERSION_PROP_COUNT; i++) {
+                forgeProp(VERSION_PROP_OVERRIDES[i].name, VERSION_PROP_OVERRIDES[i].value.c_str());
+            }
+            forgeProp("ro.build.id", g_dev_build_id.c_str());
+            LOGI("[PROP] version spoof ON: %zu version props + build.id forged", VERSION_PROP_COUNT);
         }
 
         if (!current_serial.empty()) {
@@ -757,7 +836,7 @@ private:
         }
     }
 
-    void spoofDevice(const std::string& serial) {
+    void spoofDevice(const std::string& serial, bool version_spoof) {
         if (!buildClass) { LOGE("spoofDevice: buildClass null"); return; }
 
         auto setStr = [&](jclass cls, jfieldID field, const std::string& value) {
@@ -769,28 +848,31 @@ private:
             if (env->ExceptionCheck()) env->ExceptionClear();
         };
 
-        // Device identity fields — spoofed
+        // Device identity fields — always spoofed
         setStr(buildClass, modelField, g_dev_model);
         setStr(buildClass, brandField, g_dev_brand);
         setStr(buildClass, deviceField, g_dev_device);
         setStr(buildClass, manufacturerField, g_dev_manufacturer);
-        setStr(buildClass, fingerprintField, buildFingerprint());
+        setStr(buildClass, fingerprintField, buildFingerprint(version_spoof));
         setStr(buildClass, productField, g_dev_product);
         setStr(buildClass, boardField, g_dev_platform);
         setStr(buildClass, hardwareField, g_dev_hardware);
 
-        // Version-sensitive fields — keep real OS values to avoid mismatch
-        // with Build.VERSION.SDK_INT (compile-time constant, unforgeable).
-        // Build.ID and Build.DISPLAY must reflect the real OS build.
-        // (We do NOT set idField / displayField here — they retain their real values.)
+        // Version-sensitive fields
+        if (version_spoof) {
+            // :version tag set → spoof Build.ID and Build.DISPLAY to match Android 12
+            setStr(buildClass, idField, g_dev_build_id);
+            setStr(buildClass, displayField, g_dev_build_id + "." + g_dev_incremental);
+        }
+        // else: keep real Build.ID and Build.DISPLAY (matches real SDK_INT)
 
         if (!serial.empty() && serialField) {
             setStr(buildClass, serialField, serial);
         }
 
-        LOGI("Device spoofed: %s (%s)%s [fingerprint preserves real OS version]",
+        LOGI("Device spoofed: %s (%s)%s [version_spoof=%d]",
              g_dev_model.c_str(), g_dev_brand.c_str(),
-             serial.empty() ? "" : " +serial");
+             serial.empty() ? "" : " +serial", version_spoof);
     }
 };
 

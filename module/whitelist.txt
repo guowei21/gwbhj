@@ -1,14 +1,17 @@
 # GWBHJ Whitelist — one package per line
-# Tag (colon-suffix):
+# Tags (colon-suffix, combinable):
 #   :blocked   → force unmount cpuinfo for this app (COW prop spoof still applies)
+#   :version   → spoof OS version props to Android 12 / SDK 31 (for apps that need old OS)
 #
-# Note: COW prop spoof and CPU mount are ON by default for ALL whitelisted apps.
-#       Use :blocked ONLY for sensitive apps (e.g. banking) that need real CPU info.
+# Default behavior (no tag): COW prop spoof + CPU mount ON, version props kept REAL.
+# Use :version ONLY for apps that require a simulated older Android version (e.g. games).
+# Use :blocked ONLY for sensitive apps (e.g. banking) that need real CPU info.
 #
 # Examples:
-#   com.tencent.tmgp.dfm
-#   com.coolapk.market
-#   com.icbc:blocked
-com.tencent.tmgp.dfm
+#   com.tencent.tmgp.dfm:version    # game — needs Android 12
+#   com.coolapk.market               # coolapk — real version is fine
+#   com.icbc:blocked                 # banking — real CPU needed
+#   com.example:version:blocked      # both tags: Android 12 + real CPU
+com.tencent.tmgp.dfm:version
 com.liuzh.deviceinfo
 com.coolapk.market
